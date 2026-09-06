@@ -4,6 +4,8 @@ mod backend;
 mod cursor;
 mod error;
 mod geometry;
+#[cfg(target_os = "macos")]
+mod macos;
 mod model;
 
 pub use backend::XcapBackend;

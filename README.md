@@ -62,6 +62,7 @@ Preview builds automatically publish installed-app changes from `main`, and may 
 - Press Enter in the capture menu to confirm a screenshot or recording once a target is ready
 - Optional auto-start after selecting a region, window, or full display (Preferences). Draw a region, click a window, or click the desktop in Full screen mode to start; with auto-start off, confirm with Enter or the capture button
 - Optional freeze while choosing a region or window, so hover states, tooltips, menus, and motion stay put (on by default; turn off in Preferences to select from the live desktop)
+- On macOS, frozen display previews and region/display screenshots convert the display color profile to sRGB; colors outside the sRGB gamut remain limited by the current capture pipeline.
 - Optional cursor in screenshots (on by default; freeze screen does not include the pointer by itself)
 - Optional countdown before screenshots and recordings
 - Region recordings keep the selected area highlighted on screen while recording
