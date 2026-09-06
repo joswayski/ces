@@ -192,6 +192,13 @@ impl XcapBackend {
 
 fn capture_monitor(monitor: &Monitor) -> CaptureResult<DisplayFrame> {
     let descriptor = descriptor_for_monitor(monitor)?;
+    #[cfg(target_os = "macos")]
+    let image = crate::macos::capture_display(
+        monitor
+            .id()
+            .map_err(|error| CaptureError::Backend(error.to_string()))?,
+    )?;
+    #[cfg(not(target_os = "macos"))]
     let image = monitor
         .capture_image()
         .map_err(|error| CaptureError::Backend(error.to_string()))?;
