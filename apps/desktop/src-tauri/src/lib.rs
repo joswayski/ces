@@ -6505,7 +6505,33 @@ fn update_thumbnail_stack_window(
             .flatten(),
         thumbnail_preserve_current_height(collapsed),
     );
-    let y = thumbnail_window_top(geometry.y, height, geometry.height, geometry.anchor);
+    let (x, y, collapsed_content_y) = if collapsed {
+        let work = thumbnail_monitor_bounds(handle)
+            .map(thumbnail_work_area)
+            .unwrap_or(ThumbnailWorkArea {
+                left: geometry.x,
+                top: geometry.y,
+                width: THUMBNAIL_WIDTH,
+                height,
+                top_gap: 0.0,
+                bottom_gap: 0.0,
+            });
+        let padding = thumbnail_collapsed_padding(count);
+        let placement = thumbnail_collapsed_window_position(
+            geometry.x,
+            geometry.y + padding,
+            height,
+            padding,
+            work,
+        );
+        (placement.x, placement.frame_y, Some(placement.content_y))
+    } else {
+        (
+            geometry.x,
+            thumbnail_window_top(geometry.y, height, geometry.height, geometry.anchor),
+            None,
+        )
+    };
     if visible {
         #[cfg(target_os = "macos")]
         {
@@ -6518,17 +6544,22 @@ fn update_thumbnail_stack_window(
                 eprintln!("failed to resize capture thumbnail stack: {error}");
                 let _ = window.set_size(LogicalSize::new(THUMBNAIL_WIDTH, height));
             }
-            let _ = window.set_position(tauri::LogicalPosition::new(geometry.x, y));
+            let _ = window.set_position(tauri::LogicalPosition::new(x, y));
         }
 
         #[cfg(not(target_os = "macos"))]
         {
-            let _ = window.set_position(tauri::LogicalPosition::new(geometry.x, y));
+            let _ = window.set_position(tauri::LogicalPosition::new(x, y));
             let _ = window.set_size(LogicalSize::new(THUMBNAIL_WIDTH, height));
         }
     } else {
         let _ = window.set_size(LogicalSize::new(THUMBNAIL_WIDTH, height));
-        let _ = window.set_position(tauri::LogicalPosition::new(geometry.x, y));
+        let _ = window.set_position(tauri::LogicalPosition::new(x, y));
+    }
+    if let Some(content_y) = collapsed_content_y {
+        let _ = window.eval(format!(
+            "window.dispatchEvent(new CustomEvent('captures-thumbnail-collapsed-layout', {{ detail: {{ contentY: {content_y} }} }}))"
+        ));
     }
     if !presented {
         show_thumbnail_window(&window);
@@ -6779,9 +6810,13 @@ fn thumbnail_monitor_bounds(app: &AppHandle) -> Option<ThumbnailMonitorBounds> {
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ThumbnailStackPosition {
     x: f64,
+    /// Screen-space top of the visible front card.
     y: f64,
+    /// Top of the visible front card inside the retained WebView frame.
+    content_y: f64,
 }
 
 #[tauri::command]
@@ -6806,38 +6841,74 @@ fn set_mini_preview_stack_position(
     };
     let work = thumbnail_work_area(bounds);
     let count = state.artifacts.lock().len().max(1);
-    // Clamp the front card's travel, not the count-dependent peek envelope.
-    // Both anchors must allow crossing the midpoint even with a large pile.
-    let content_height = THUMBNAIL_CARD_HEIGHT + 2.0 * THUMBNAIL_CONTROL_GUTTER;
     let frame_height = thumbnail_window_logical_height(&window)
         .unwrap_or_else(|| thumbnail_collapsed_frame_height(count));
     let anchor = anchor.unwrap_or(ThumbnailStackAnchor::Bottom);
     let peek_padding = thumbnail_collapsed_padding(count);
-    let front_y = y + frame_height - peek_padding - THUMBNAIL_CARD_HEIGHT;
-    let virtual_y = thumbnail_collapsed_virtual_y(front_y, frame_height, anchor);
-    let (x, virtual_y) =
-        thumbnail_clamp_aligned_frame(x, virtual_y, frame_height, content_height, work, anchor);
-    let front_y = thumbnail_collapsed_front_y(virtual_y, frame_height, anchor);
-    let y = front_y - (frame_height - peek_padding - THUMBNAIL_CARD_HEIGHT);
+    let placement = thumbnail_collapsed_window_position(x, y, frame_height, peek_padding, work);
     #[cfg(target_os = "macos")]
-    captures_macos_window::move_thumbnail_frame(&window, x, y).map_err(str::to_owned)?;
+    captures_macos_window::move_thumbnail_frame(&window, placement.x, placement.frame_y)
+        .map_err(str::to_owned)?;
     #[cfg(not(target_os = "macos"))]
     window
-        .set_position(tauri::LogicalPosition::new(x, y))
+        .set_position(tauri::LogicalPosition::new(placement.x, placement.frame_y))
         .map_err(|error| format!("failed to move mini preview: {error}"))?;
     state
         .thumbnail_visibility
         .lock()
         .set_stack_origin(ThumbnailStackOrigin {
-            x,
+            x: placement.x,
             edge: if anchor.is_top() {
-                front_y - THUMBNAIL_CONTROL_GUTTER
+                placement.front_y - THUMBNAIL_CONTROL_GUTTER
             } else {
-                front_y + THUMBNAIL_CARD_HEIGHT + THUMBNAIL_CONTROL_GUTTER
+                placement.front_y + THUMBNAIL_CARD_HEIGHT + THUMBNAIL_CONTROL_GUTTER
             },
             anchor,
         });
-    Ok(ThumbnailStackPosition { x, y })
+    Ok(ThumbnailStackPosition {
+        x: placement.x,
+        y: placement.front_y,
+        content_y: placement.content_y,
+    })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct ThumbnailCollapsedWindowPosition {
+    x: f64,
+    frame_y: f64,
+    front_y: f64,
+    content_y: f64,
+}
+
+/// Place the visible collapsed pile within a retained, potentially much taller
+/// WebView frame. The native frame stays inside the work area while the card
+/// moves through its empty space, avoiding AppKit's off-screen frame clamp.
+fn thumbnail_collapsed_window_position(
+    x: f64,
+    front_y: f64,
+    frame_height: f64,
+    padding: f64,
+    work: ThumbnailWorkArea,
+) -> ThumbnailCollapsedWindowPosition {
+    let min_x = work.left;
+    let max_x = (work.left + work.width - THUMBNAIL_WIDTH).max(min_x);
+    let work_bottom = work.top + work.height - work.bottom_gap;
+    let min_front_y = work.top + THUMBNAIL_CONTROL_GUTTER;
+    let max_front_y =
+        (work_bottom - THUMBNAIL_CARD_HEIGHT - THUMBNAIL_CONTROL_GUTTER).max(min_front_y);
+    let front_y = front_y.clamp(min_front_y, max_front_y);
+    let frame_height = frame_height.max(THUMBNAIL_CARD_HEIGHT + 2.0 * padding);
+    let min_frame_y = work.top;
+    let max_frame_y = (work_bottom - frame_height).max(min_frame_y);
+    let bottom_content_y = (frame_height - padding - THUMBNAIL_CARD_HEIGHT).max(padding);
+    let frame_y = (front_y - bottom_content_y).clamp(min_frame_y, max_frame_y);
+
+    ThumbnailCollapsedWindowPosition {
+        x: x.clamp(min_x, max_x),
+        frame_y,
+        front_y,
+        content_y: front_y - frame_y,
+    }
 }
 
 fn thumbnail_stack_pose_depth(depth: f64) -> f64 {
@@ -10202,6 +10273,57 @@ mod tests {
         // Top-aligned slack hangs below the work area so the pile can still
         // reach the bottom chrome gap.
         assert_eq!(788.0 + 240.0, 1_040.0 - THUMBNAIL_SYSTEM_CHROME_GAP);
+    }
+
+    #[test]
+    fn moves_a_collapsed_pile_through_a_retained_on_screen_frame() {
+        let work =
+            super::thumbnail_work_area(bounds((0, 0, 1_920, 1_040), (0, 0, 1_920, 1_080), 1.0));
+        let frame_height = 792.0;
+        let padding = 52.0;
+
+        let top =
+            super::thumbnail_collapsed_window_position(-40.0, -800.0, frame_height, padding, work);
+        assert_eq!(top.x, 0.0);
+        assert_eq!(top.frame_y, 0.0);
+        assert_eq!(top.front_y, 52.0);
+        assert_eq!(top.content_y, 52.0);
+
+        let middle =
+            super::thumbnail_collapsed_window_position(420.0, 400.0, frame_height, padding, work);
+        assert_eq!(middle.frame_y, 0.0);
+        assert_eq!(middle.front_y, 400.0);
+        assert_eq!(middle.content_y, 400.0);
+
+        let bottom = super::thumbnail_collapsed_window_position(
+            8_000.0,
+            8_000.0,
+            frame_height,
+            padding,
+            work,
+        );
+        assert_eq!(bottom.x, 1_580.0);
+        assert_eq!(bottom.frame_y, 236.0);
+        assert_eq!(bottom.front_y, 816.0);
+        assert_eq!(bottom.content_y, 580.0);
+        assert_eq!(bottom.frame_y + frame_height, 1_028.0);
+    }
+
+    #[test]
+    fn collapsed_content_position_is_continuous_when_the_frame_reaches_an_edge() {
+        let work =
+            super::thumbnail_work_area(bounds((0, 0, 1_920, 1_040), (0, 0, 1_920, 1_080), 1.0));
+        let before = super::thumbnail_collapsed_window_position(100.0, 579.0, 792.0, 52.0, work);
+        let edge = super::thumbnail_collapsed_window_position(100.0, 580.0, 792.0, 52.0, work);
+        let after = super::thumbnail_collapsed_window_position(100.0, 581.0, 792.0, 52.0, work);
+
+        assert_eq!(before.front_y + 1.0, edge.front_y);
+        assert_eq!(edge.front_y + 1.0, after.front_y);
+        assert_eq!(before.frame_y, 0.0);
+        assert_eq!(edge.frame_y, 0.0);
+        assert_eq!(after.frame_y, 1.0);
+        assert_eq!(before.content_y + 1.0, edge.content_y);
+        assert_eq!(edge.content_y, after.content_y);
     }
 
     #[test]

@@ -152,6 +152,9 @@ describe("thumbnail stack layout", () => {
     expect(thumbnailStyles).toMatch(
       /\.thumbnail-stack-compact:not\(\.thumbnail-stack-expanding\) > \.thumbnail-card\s*\{[^}]*bottom:\s*var\(--thumbnail-collapsed-padding, 52px\)/,
     );
+    expect(thumbnailStyles).toMatch(/--thumbnail-collapsed-content-y/);
+    expect(thumbnailStyles).toMatch(/translate:\s*0 calc\(/);
+    expect(thumbnailStyles).toMatch(/html:has\(\.thumbnail-stack\)[\s\S]*?overflow:\s*hidden/);
     expect(thumbnailStyles).toMatch(
       /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-expand-sign, 1\)/,
     );
