@@ -26,15 +26,13 @@ import {
   THUMBNAIL_STACK_SCROLLPORT_CLASS,
   thumbnailStackShiftPx,
   thumbnailCollapsedPeekPx,
-  thumbnailCollapsedFrameHeight,
+  THUMBNAIL_COLLAPSED_TRAVEL_HEIGHT_PX,
+  thumbnailCollapsedPadding,
   thumbnailStackGravityFromNormalizedY,
   thumbnailStackGravityFromHarness,
   thumbnailStackGravityFromWorkArea,
   thumbnailStackAnchorFromGravity,
   thumbnailStackHarnessPileTop,
-  thumbnailStackHarnessCardTop,
-  convertHarnessStackOffsetAnchor,
-  convertThumbnailStackFrameAnchor,
   thumbnailStackVisualPileBottom,
   applyThumbnailStackGravity,
   harnessOffsetForPlacement,
@@ -134,7 +132,7 @@ describe("thumbnail stack layout", () => {
     expect(thumbnailStyles).toMatch(/--thumbnail-stack-gravity/);
     expect(thumbnailStyles).toMatch(/--thumbnail-stack-expand-sign:\s*-1/);
     expect(thumbnailStyles).toMatch(
-      /\.thumbnail-stack-anchor-top\.thumbnail-stack-compact > \.thumbnail-card\s*\{[^}]*top:\s*52px/,
+      /\.thumbnail-stack-compact:not\(\.thumbnail-stack-expanding\) > \.thumbnail-card\s*\{[^}]*bottom:\s*var\(--thumbnail-collapsed-padding, 52px\)/,
     );
     expect(thumbnailStyles).toMatch(
       /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-gravity, 1\)/,
@@ -213,66 +211,7 @@ describe("thumbnail stack layout", () => {
     expect(thumbnailStackGravityFromNormalizedY(1)).toBe(1);
     expect(thumbnailStackGravityFromNormalizedY(0.5)).toBe(0);
     expect(thumbnailStackGravityFromNormalizedY(0)).toBe(-1);
-    expect(thumbnailCollapsedFrameHeight(1)).toBe(240);
-    expect(thumbnailCollapsedFrameHeight(4)).toBe(
-      THUMBNAIL_STACK_PADDING_PX
-      + THUMBNAIL_STACK_CONTROL_GUTTER_PX
-      + THUMBNAIL_CARD_HEIGHT_PX
-      + Math.max(0, thumbnailCollapsedPeekPx(4, true) - THUMBNAIL_STACK_PADDING_PX),
-    );
-
-    const viewportHeight = 800;
-    const contentHeight = 240;
-    expect(thumbnailStackGravityFromHarness({
-      offsetY: 0,
-      anchor: "bottom",
-      viewportHeight,
-      contentHeight,
-    })).toBeCloseTo(1);
-    expect(thumbnailStackGravityFromHarness({
-      offsetY: contentHeight - viewportHeight,
-      anchor: "bottom",
-      viewportHeight,
-      contentHeight,
-    })).toBeCloseTo(-1);
-    expect(thumbnailStackHarnessPileTop({
-      offsetY: contentHeight - viewportHeight,
-      anchor: "bottom",
-      viewportHeight,
-      contentHeight,
-    })).toBeCloseTo(0);
-
-    const bottomOffset = { x: 12, y: contentHeight - viewportHeight };
-    const topOffset = convertHarnessStackOffsetAnchor(
-      bottomOffset,
-      "bottom",
-      "top",
-      viewportHeight,
-      contentHeight,
-    );
-    expect(topOffset).toEqual({ x: 12, y: 0 });
-    expect(convertHarnessStackOffsetAnchor(
-      topOffset,
-      "top",
-      "bottom",
-      viewportHeight,
-      contentHeight,
-    )).toEqual(bottomOffset);
-
-    expect(convertThumbnailStackFrameAnchor(
-      { x: 40, y: -552 },
-      "bottom",
-      "top",
-      792,
-      240,
-    )).toEqual({ x: 40, y: 0 });
-    expect(convertThumbnailStackFrameAnchor(
-      { x: 40, y: 0 },
-      "top",
-      "bottom",
-      792,
-      240,
-    )).toEqual({ x: 40, y: -552 });
+    expect(THUMBNAIL_COLLAPSED_TRAVEL_HEIGHT_PX).toBe(264);
 
     expect(thumbnailStackAnchorFromPlacement("top_right")).toBe("top");
     expect(thumbnailStackSideFromPlacement("top_right")).toBe("right");
@@ -288,7 +227,7 @@ describe("thumbnail stack layout", () => {
       /\.thumbnail-stack-anchor-top\s*\{[^}]*padding:\s*52px 28px 28px/,
     );
     expect(thumbnailStyles).toMatch(
-      /\.thumbnail-stack-anchor-top\.thumbnail-stack-compact > \.thumbnail-card\s*\{[^}]*top:\s*52px/,
+      /\.thumbnail-stack-anchor-top\.thumbnail-stack-expanding > \.thumbnail-card\s*\{[^}]*top:\s*52px/,
     );
     expect(thumbnailStyles).toMatch(
       /\.thumbnail-stack-toolbar-anchor-top\s*\{[^}]*top:\s*16px/,
@@ -300,26 +239,6 @@ describe("thumbnail stack layout", () => {
     expect(thumbnailStackAnchorFromGravity(0.1, "top")).toBe("top");
     expect(THUMBNAIL_STACK_ANCHOR_TOP_GRAVITY).toBeLessThan(0);
     expect(THUMBNAIL_STACK_ANCHOR_BOTTOM_GRAVITY).toBeGreaterThan(0);
-
-    const bottomCardTop = thumbnailStackHarnessCardTop({
-      offsetY: -280,
-      anchor: "bottom",
-      viewportHeight,
-    });
-    const flippedCardTop = thumbnailStackHarnessCardTop({
-      offsetY: convertHarnessStackOffsetAnchor(
-        { x: 0, y: -280 },
-        "bottom",
-        "top",
-        viewportHeight,
-        contentHeight,
-      ).y,
-      anchor: "top",
-      viewportHeight,
-    });
-    expect(Math.abs(flippedCardTop - bottomCardTop)).toBe(
-      THUMBNAIL_STACK_CONTROL_GUTTER_PX - THUMBNAIL_STACK_PADDING_PX,
-    );
 
     expect(thumbnailStackBiasFromNormalizedX(0)).toBe(-1);
     expect(thumbnailStackBiasFromNormalizedX(0.5)).toBe(0);
@@ -347,46 +266,6 @@ describe("thumbnail stack layout", () => {
       contentHeight: 240,
     })).toBeCloseTo(-1);
 
-    const tallFrame = 792;
-    const topOfScreen = convertThumbnailStackFrameAnchor(
-      { x: 12, y: contentHeight - tallFrame },
-      "bottom",
-      "top",
-      tallFrame,
-      contentHeight,
-    );
-    expect(topOfScreen).toEqual({ x: 12, y: 0 });
-    expect(convertThumbnailStackFrameAnchor(
-      topOfScreen,
-      "top",
-      "bottom",
-      tallFrame,
-      contentHeight,
-    )).toEqual({ x: 12, y: contentHeight - tallFrame });
-    expect(thumbnailStackVisualPileBottom({
-      y: contentHeight - tallFrame,
-      frameHeight: tallFrame,
-      contentHeight,
-      anchor: "bottom",
-    })).toBe(contentHeight);
-    expect(thumbnailStackVisualPileBottom({
-      y: 0,
-      frameHeight: tallFrame,
-      contentHeight,
-      anchor: "top",
-    })).toBe(contentHeight);
-    expect(thumbnailStackGravityFromWorkArea({
-      pileBottom: thumbnailStackVisualPileBottom({
-        y: 0,
-        frameHeight: tallFrame,
-        contentHeight,
-        anchor: "top",
-      }),
-      workTop: 0,
-      workHeight: 1_040,
-      contentHeight,
-    })).toBeCloseTo(-1);
-
     const stack = document.createElement("main");
     applyThumbnailStackGravity(stack, -0.42);
     expect(stack.style.getPropertyValue(THUMBNAIL_STACK_GRAVITY_VAR)).toBe("-0.42");
@@ -395,6 +274,62 @@ describe("thumbnail stack layout", () => {
     );
     expect(thumbnailStyles).not.toMatch(/--thumbnail-stack-skew-y/);
   });
+
+  it.each([800, 1_200])(
+    "keeps the collapsed frame and gravity fixed in both directions at %ipx",
+    (frameHeight) => {
+      for (const count of [1, 2, 8, 24]) {
+        const padding = thumbnailCollapsedPadding(count);
+        const contentHeight = THUMBNAIL_COLLAPSED_TRAVEL_HEIGHT_PX;
+        const frontCardTop = frameHeight - padding - THUMBNAIL_CARD_HEIGHT_PX;
+
+        expect(padding).toBe(Math.max(
+          THUMBNAIL_STACK_CONTROL_GUTTER_PX,
+          thumbnailCollapsedPeekPx(count, true) + THUMBNAIL_STACK_PADDING_PX,
+        ));
+        expect(frontCardTop).toBe(frameHeight - padding - 160);
+        expect(frameHeight).toBeGreaterThanOrEqual(
+          THUMBNAIL_CARD_HEIGHT_PX + 2 * padding,
+        );
+
+        const offsets = [
+          { offsetY: padding - THUMBNAIL_STACK_CONTROL_GUTTER_PX, gravity: 1 },
+          {
+            offsetY: padding
+              - THUMBNAIL_STACK_CONTROL_GUTTER_PX
+              + contentHeight
+              - frameHeight,
+            gravity: -1,
+          },
+        ];
+        for (const { offsetY, gravity } of offsets) {
+          const options = { offsetY, viewportHeight: frameHeight, contentHeight, padding };
+          const beforeAnchorChange = thumbnailStackGravityFromHarness(options);
+          const afterAnchorChange = thumbnailStackGravityFromHarness(options);
+          expect(afterAnchorChange).toBe(beforeAnchorChange);
+          expect(beforeAnchorChange).toBeCloseTo(gravity);
+          expect(thumbnailStackHarnessPileTop(options)).toBeCloseTo(
+            gravity > 0 ? frameHeight - contentHeight : 0,
+          );
+
+          const pileBottom = thumbnailStackVisualPileBottom({
+            y: offsetY,
+            frameHeight,
+            padding,
+          });
+          expect(pileBottom).toBeCloseTo(
+            offsetY + frameHeight - padding + THUMBNAIL_STACK_CONTROL_GUTTER_PX,
+          );
+          expect(thumbnailStackGravityFromWorkArea({
+            pileBottom,
+            workTop: 0,
+            workHeight: frameHeight,
+            contentHeight,
+          })).toBeCloseTo(beforeAnchorChange);
+        }
+      }
+    },
+  );
 
   it("recedes extra collapsed cards instead of hiding them", () => {
     expect(thumbnailStackPileDepth(0)).toBe(0);
@@ -667,13 +602,10 @@ describe("thumbnail stack layout", () => {
       /\.thumbnail-top-actions\s*\{[\s\S]*?top:\s*8px/,
     );
     expect(thumbnailStyles).toMatch(
-      /\.thumbnail-stack-anchor-top\.thumbnail-stack-compact > \.thumbnail-card\s*\{[\s\S]*?top:\s*28px/,
+      /\.thumbnail-stack-anchor-top\.thumbnail-stack-expanding > \.thumbnail-card\s*\{[^}]*top:\s*52px/,
     );
-    expect(thumbnailStyles).toMatch(
-      /\.thumbnail-stack-anchor-top\.thumbnail-stack-expanding > \.thumbnail-card,\s*\n\.thumbnail-stack-anchor-top\.thumbnail-stack-minimizing > \.thumbnail-card\s*\{[\s\S]*?top:\s*52px/,
-    );
-    expect(thumbnailStyles).toMatch(
-      /\.thumbnail-stack-anchor-top\.thumbnail-stack-minimizing\.thumbnail-stack-minimize-run > \.thumbnail-card\s*\{[\s\S]*?top:\s*28px/,
+    expect(thumbnailStyles).not.toMatch(
+      /\.thumbnail-stack-anchor-top\.thumbnail-stack-minimizing\.thumbnail-stack-minimize-run/,
     );
   });
 

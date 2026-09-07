@@ -1,3 +1,5 @@
+import { THUMBNAIL_CARD_HEIGHT_PX, THUMBNAIL_STACK_CONTROL_GUTTER_PX } from "./thumbnailLayout";
+
 /** Movement before a collapsed-pile press becomes a window drag instead of expand. */
 export const THUMBNAIL_STACK_DRAG_THRESHOLD_PX = 8;
 
@@ -145,7 +147,18 @@ export function clampThumbnailStackFrame(
   work: ThumbnailStackWorkArea,
   contentHeight: number = frameHeight,
   anchor: "top" | "bottom" = "bottom",
+  padding?: number,
 ): ThumbnailStackPoint {
+  if (padding !== undefined) {
+    const frontY = y + frameHeight - padding - THUMBNAIL_CARD_HEIGHT_PX;
+    const virtualY = anchor === "top"
+      ? frontY - THUMBNAIL_STACK_CONTROL_GUTTER_PX
+      : frontY + THUMBNAIL_CARD_HEIGHT_PX + THUMBNAIL_STACK_CONTROL_GUTTER_PX - frameHeight;
+    const next = clampThumbnailStackFrame(
+      x, virtualY, frameWidth, frameHeight, work, contentHeight, anchor,
+    );
+    return { x: next.x, y: y + next.y - virtualY };
+  }
   // macOS/Linux keep the collapsed window at its expanded height. Bottom piles
   // sit in the lower content box (empty chrome may leave the work area above);
   // top piles sit in the upper content box so peek-down has room below.
@@ -194,6 +207,7 @@ export function readHarnessStackOffset(
 export type HarnessStackOffsetOptions = {
   anchor?: "top" | "bottom";
   contentHeight?: number;
+  padding?: number;
 };
 
 export function writeHarnessStackOffset(
@@ -212,10 +226,14 @@ export function writeHarnessStackOffset(
   const maxY = anchor === "top"
     ? Math.max(0, viewport.height - contentHeight)
     : 0;
-  const clamped = {
+  const clamped = options.padding === undefined ? {
     x: clamp(x, 0, Math.max(0, viewport.width - HARNESS_FRAME_WIDTH_PX)),
     y: clamp(y, minY, maxY),
-  };
+  } : clampThumbnailStackFrame(
+    x, y, HARNESS_FRAME_WIDTH_PX, viewport.height,
+    { x: 0, y: 0, width: viewport.width, height: viewport.height, bottomGap: 0 },
+    contentHeight, anchor, options.padding,
+  );
   root.style.setProperty(THUMBNAIL_HARNESS_DRAG_X_VAR, `${clamped.x}px`);
   root.style.setProperty(THUMBNAIL_HARNESS_DRAG_Y_VAR, `${clamped.y}px`);
   return clamped;
@@ -283,26 +301,6 @@ export class CollapsedThumbnailStackDrag {
 
   get isActive(): boolean {
     return this.pointerId !== null;
-  }
-
-  /**
-   * Keep the pointer delta after a coordinate-system change (bottom↔top
-   * harness anchor) so later moves do not jump back to the old origin. When
-   * `fromFrame` is supplied, preserve pointer samples that arrived while an
-   * asynchronous native move was converting the frame.
-   */
-  rebaseFrame(frame: ThumbnailStackPoint, fromFrame?: ThumbnailStackPoint) {
-    if (fromFrame) {
-      this.startFrame = {
-        x: this.startFrame.x + frame.x - fromFrame.x,
-        y: this.startFrame.y + frame.y - fromFrame.y,
-      };
-      return;
-    }
-    this.startFrame = {
-      x: frame.x - (this.lastPointer.x - this.startPointer.x),
-      y: frame.y - (this.lastPointer.y - this.startPointer.y),
-    };
   }
 
   /** Start lean from rest after the hover fan has gathered. */

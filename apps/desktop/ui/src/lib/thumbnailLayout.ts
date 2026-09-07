@@ -12,6 +12,10 @@ export const THUMBNAIL_STACK_PADDING_PX = 28;
 /** Expanded Show less gutter (bottom padding, swapped to the top when top-anchored). */
 export const THUMBNAIL_STACK_CONTROL_GUTTER_PX = 52;
 
+/** Drag limits/gravity follow the front card, not count-dependent rear peeks. */
+export const THUMBNAIL_COLLAPSED_TRAVEL_HEIGHT_PX = THUMBNAIL_CARD_HEIGHT_PX
+  + 2 * THUMBNAIL_STACK_CONTROL_GUTTER_PX;
+
 /** One stack slot: card height + inter-card gap. */
 export const THUMBNAIL_CARD_SLOT_PX = THUMBNAIL_CARD_HEIGHT_PX + THUMBNAIL_STACK_GAP_PX;
 
@@ -153,18 +157,11 @@ export function thumbnailCollapsedPeekPx(
   return pose * (hovered ? THUMBNAIL_STACK_HOVER_PEEK_PX : THUMBNAIL_STACK_IDLE_PEEK_PX);
 }
 
-/**
- * Collapsed native/harness frame height matching `thumbnail_stack_height`
- * in Rust: front card + gutters + hover peek that sticks out of padding.
- */
-export function thumbnailCollapsedFrameHeight(cardCount: number): number {
-  const peek = thumbnailCollapsedPeekPx(Math.max(cardCount, 1), true);
-  const extraAbovePadding = Math.max(0, peek - THUMBNAIL_STACK_PADDING_PX);
-  return (
-    THUMBNAIL_STACK_PADDING_PX
-    + THUMBNAIL_STACK_CONTROL_GUTTER_PX
-    + THUMBNAIL_CARD_HEIGHT_PX
-    + extraAbovePadding
+/** Native collapsed frames reserve room for the fan on both sides. */
+export function thumbnailCollapsedPadding(cardCount: number): number {
+  return Math.max(
+    THUMBNAIL_STACK_CONTROL_GUTTER_PX,
+    thumbnailCollapsedPeekPx(Math.max(1, cardCount), true) + THUMBNAIL_STACK_PADDING_PX,
   );
 }
 
@@ -257,21 +254,26 @@ export function thumbnailStackGravityFromNormalizedY(yFromTop: number): number {
 
 export type ThumbnailStackHarnessGravity = {
   offsetY: number;
-  anchor: ThumbnailStackAnchor;
   viewportHeight: number;
   contentHeight: number;
+  padding: number;
 };
 
 /** Visible pile top in CSS pixels for a harness `#root` translation. */
 export function thumbnailStackHarnessPileTop({
   offsetY,
-  anchor,
   viewportHeight,
   contentHeight,
+  padding,
 }: ThumbnailStackHarnessGravity): number {
   const content = Math.max(0, contentHeight);
-  if (anchor === "top") return offsetY;
-  return viewportHeight + offsetY - content;
+  return (
+    viewportHeight
+    + offsetY
+    - Math.max(0, padding)
+    + THUMBNAIL_STACK_CONTROL_GUTTER_PX
+    - content
+  );
 }
 
 export function thumbnailStackGravityFromHarness(
@@ -294,29 +296,6 @@ export function thumbnailStackAnchorFromGravity(
     return "bottom";
   }
   return current;
-}
-
-/**
- * Compact cards sit on one end of a full-height stack (`bottom: 52px` or
- * `top: 52px`). Frame-anchor conversion keeps their screen position stable
- * when the stack crosses the midpoint during a drag.
- */
-export function thumbnailStackHarnessCardTop({
-  offsetY,
-  anchor,
-  viewportHeight,
-}: {
-  offsetY: number;
-  anchor: ThumbnailStackAnchor;
-  viewportHeight: number;
-}): number {
-  if (anchor === "top") return offsetY + THUMBNAIL_STACK_CONTROL_GUTTER_PX;
-  return (
-    offsetY
-    + viewportHeight
-    - THUMBNAIL_STACK_CONTROL_GUTTER_PX
-    - THUMBNAIL_CARD_HEIGHT_PX
-  );
 }
 
 /**
@@ -360,60 +339,22 @@ export function thumbnailStackSideFromBias(
   return current;
 }
 
-/** Convert a harness `#root` translation between top and bottom anchoring. */
-export function convertHarnessStackOffsetAnchor(
-  offset: { x: number; y: number },
-  from: ThumbnailStackAnchor,
-  to: ThumbnailStackAnchor,
-  viewportHeight: number,
-  contentHeight: number,
-): { x: number; y: number } {
-  if (from === to) return offset;
-  const pileTop = thumbnailStackHarnessPileTop({
-    offsetY: offset.y,
-    anchor: from,
-    viewportHeight,
-    contentHeight,
-  });
-  if (to === "top") return { x: offset.x, y: pileTop };
-  return { x: offset.x, y: pileTop + contentHeight - viewportHeight };
-}
-
 /**
- * Visible pile bottom in screen space. Bottom-aligned native windows keep
- * empty chrome above the pile; top-aligned ones keep it below so peek-down
- * is not clipped by the webview.
+ * Bottom-aligned equivalent pile bottom in screen space. Use the front card
+ * as the reference so changing DOM anchors cannot change gravity at a fixed
+ * physical frame position.
  */
 export function thumbnailStackVisualPileBottom({
   y,
   frameHeight,
-  contentHeight,
-  anchor,
+  padding,
 }: {
   y: number;
   frameHeight: number;
-  contentHeight: number;
-  anchor: ThumbnailStackAnchor;
+  padding: number;
 }): number {
   const frame = Math.max(0, frameHeight);
-  const content = Math.min(frame, Math.max(0, contentHeight));
-  return anchor === "top" ? y + content : y + frame;
-}
-
-/** Keep the visible pile in place when the native frame flips its slack. */
-export function convertThumbnailStackFrameAnchor(
-  offset: { x: number; y: number },
-  from: ThumbnailStackAnchor,
-  to: ThumbnailStackAnchor,
-  frameHeight: number,
-  contentHeight: number,
-): { x: number; y: number } {
-  if (from === to) return offset;
-  const frame = Math.max(0, frameHeight);
-  const content = Math.min(frame, Math.max(0, contentHeight));
-  const slack = Math.max(0, frame - content);
-  const pileTop = from === "top" ? offset.y : offset.y + slack;
-  return { x: offset.x, y: to === "top" ? pileTop : pileTop - slack };
+  return y + frame - Math.max(0, padding) + THUMBNAIL_STACK_CONTROL_GUTTER_PX;
 }
 
 export function applyThumbnailStackGravity(

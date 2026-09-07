@@ -6703,8 +6703,16 @@ fn thumbnail_window_geometry(
         .unwrap_or(ThumbnailWindowGeometry {
             x: 20.0,
             y: 20.0,
-            height: thumbnail_stack_height(count, collapsed),
-            anchor: ThumbnailStackAnchor::from(placement),
+            height: if collapsed {
+                thumbnail_collapsed_frame_height(count)
+            } else {
+                thumbnail_stack_height(count)
+            },
+            anchor: if collapsed {
+                ThumbnailStackAnchor::Bottom
+            } else {
+                ThumbnailStackAnchor::from(placement)
+            },
         })
 }
 
@@ -6757,17 +6765,30 @@ fn set_mini_preview_stack_position(
     };
     let work = thumbnail_work_area(bounds);
     let count = state.artifacts.lock().len().max(1);
-    let content_height = thumbnail_stack_height(count, true);
-    let frame_height = thumbnail_window_logical_height(&window).unwrap_or(content_height);
+    // Clamp the front card's travel, not the count-dependent peek envelope.
+    // Both anchors must allow crossing the midpoint even with a large pile.
+    let content_height = THUMBNAIL_CARD_HEIGHT + 2.0 * THUMBNAIL_CONTROL_GUTTER;
+    let frame_height = thumbnail_window_logical_height(&window)
+        .unwrap_or_else(|| thumbnail_collapsed_frame_height(count));
     let anchor = anchor.unwrap_or(ThumbnailStackAnchor::Bottom);
-    let (x, y) = thumbnail_clamp_aligned_frame(x, y, frame_height, content_height, work, anchor);
+    let peek_padding = thumbnail_collapsed_padding(count);
+    let front_y = y + frame_height - peek_padding - THUMBNAIL_CARD_HEIGHT;
+    let virtual_y = thumbnail_collapsed_virtual_y(front_y, frame_height, anchor);
+    let (x, virtual_y) =
+        thumbnail_clamp_aligned_frame(x, virtual_y, frame_height, content_height, work, anchor);
+    let front_y = thumbnail_collapsed_front_y(virtual_y, frame_height, anchor);
+    let y = front_y - (frame_height - peek_padding - THUMBNAIL_CARD_HEIGHT);
     let _ = window.set_position(tauri::LogicalPosition::new(x, y));
     state
         .thumbnail_visibility
         .lock()
         .set_stack_origin(ThumbnailStackOrigin {
             x,
-            edge: if anchor.is_top() { y } else { y + frame_height },
+            edge: if anchor.is_top() {
+                front_y - THUMBNAIL_CONTROL_GUTTER
+            } else {
+                front_y + THUMBNAIL_CARD_HEIGHT + THUMBNAIL_CONTROL_GUTTER
+            },
             anchor,
         });
     Ok(ThumbnailStackPosition { x, y })
@@ -6791,15 +6812,39 @@ fn thumbnail_collapsed_peek(count: usize, hovered: bool) -> f64 {
     pose * if hovered { 16.0 } else { 13.0 }
 }
 
-fn thumbnail_stack_height(count: usize, collapsed: bool) -> f64 {
-    if collapsed {
-        let peek = thumbnail_collapsed_peek(count.max(1), true);
-        let extra_above_padding = (peek - THUMBNAIL_PADDING).max(0.0);
-        return THUMBNAIL_PADDING
-            + THUMBNAIL_CONTROL_GUTTER
-            + THUMBNAIL_CARD_HEIGHT
-            + extra_above_padding;
+fn thumbnail_collapsed_padding(count: usize) -> f64 {
+    (thumbnail_collapsed_peek(count.max(1), true) + THUMBNAIL_PADDING).max(THUMBNAIL_CONTROL_GUTTER)
+}
+
+fn thumbnail_collapsed_frame_height(count: usize) -> f64 {
+    THUMBNAIL_CARD_HEIGHT + 2.0 * thumbnail_collapsed_padding(count)
+}
+
+fn thumbnail_collapsed_virtual_y(
+    front_y: f64,
+    frame_height: f64,
+    anchor: ThumbnailStackAnchor,
+) -> f64 {
+    if anchor.is_top() {
+        front_y - THUMBNAIL_CONTROL_GUTTER
+    } else {
+        front_y + THUMBNAIL_CARD_HEIGHT + THUMBNAIL_CONTROL_GUTTER - frame_height
     }
+}
+
+fn thumbnail_collapsed_front_y(
+    virtual_y: f64,
+    frame_height: f64,
+    anchor: ThumbnailStackAnchor,
+) -> f64 {
+    if anchor.is_top() {
+        virtual_y + THUMBNAIL_CONTROL_GUTTER
+    } else {
+        virtual_y + frame_height - THUMBNAIL_CARD_HEIGHT - THUMBNAIL_CONTROL_GUTTER
+    }
+}
+
+fn thumbnail_stack_height(count: usize) -> f64 {
     let cards = count.max(1) as f64;
     THUMBNAIL_PADDING
         + THUMBNAIL_CONTROL_GUTTER
@@ -6929,7 +6974,11 @@ fn thumbnail_geometry(
 ) -> ThumbnailWindowGeometry {
     let work = thumbnail_work_area(bounds);
     let available_height = (work.height - work.bottom_gap - THUMBNAIL_PADDING).max(1.0);
-    let stack_height = thumbnail_stack_height(count, collapsed).min(available_height);
+    let stack_height = if collapsed {
+        thumbnail_collapsed_frame_height(count)
+    } else {
+        thumbnail_stack_height(count).min(available_height)
+    };
     let default_x = if placement.is_right() {
         (work.left + work.width - THUMBNAIL_WIDTH).max(work.left)
     } else {
@@ -6956,6 +7005,36 @@ fn thumbnail_geometry(
             (default_x, desired_y, default_anchor)
         }
     };
+    if collapsed {
+        let front_y = match origin {
+            Some(origin) if origin.anchor.is_top() => origin.edge + THUMBNAIL_CONTROL_GUTTER,
+            Some(origin) => origin.edge - THUMBNAIL_CARD_HEIGHT - THUMBNAIL_CONTROL_GUTTER,
+            None if default_anchor.is_top() => work.top + work.top_gap + THUMBNAIL_CONTROL_GUTTER,
+            None => {
+                work.top + work.height
+                    - work.bottom_gap
+                    - THUMBNAIL_CARD_HEIGHT
+                    - THUMBNAIL_CONTROL_GUTTER
+            }
+        };
+        let virtual_y = thumbnail_collapsed_virtual_y(front_y, stack_height, anchor);
+        let (x, virtual_y) = thumbnail_clamp_aligned_frame(
+            x,
+            virtual_y,
+            stack_height,
+            THUMBNAIL_CARD_HEIGHT + 2.0 * THUMBNAIL_CONTROL_GUTTER,
+            work,
+            anchor,
+        );
+        let front_y = thumbnail_collapsed_front_y(virtual_y, stack_height, anchor);
+        let padding = thumbnail_collapsed_padding(count);
+        return ThumbnailWindowGeometry {
+            x,
+            y: front_y - padding,
+            height: stack_height,
+            anchor: ThumbnailStackAnchor::Bottom,
+        };
+    }
     let (x, y) =
         thumbnail_clamp_aligned_frame(x, desired_y, stack_height, stack_height, work, anchor);
     ThumbnailWindowGeometry {
@@ -8720,9 +8799,9 @@ mod tests {
         should_claim_region_cursor_on_shortcut_press, should_freeze_visible_capture_ui,
         should_prefetch_freeze_on_shortcut_press, should_trigger_shortcut,
         startup_notice_fallback_edge_from_insets, startup_notice_url, take_ready_or_defer_windows,
-        thumbnail_clamp_aligned_frame, thumbnail_cursor_action, thumbnail_cursor_ignore_update,
-        thumbnail_geometry, thumbnail_pointer_in_space, thumbnail_pointer_position,
-        thumbnail_preserve_current_height, thumbnail_stack_height,
+        thumbnail_clamp_aligned_frame, thumbnail_collapsed_frame_height, thumbnail_cursor_action,
+        thumbnail_cursor_ignore_update, thumbnail_geometry, thumbnail_pointer_in_space,
+        thumbnail_pointer_position, thumbnail_preserve_current_height, thumbnail_stack_height,
         thumbnail_stack_should_be_visible, thumbnail_visible_window_height, thumbnail_window_top,
         track_shortcut_suppression, tray_accelerator, tray_icon_rect_is_usable,
         tray_notice_window_size, viewer_window_label, window_display_crop_is_safe,
@@ -9803,7 +9882,7 @@ mod tests {
                 true,
                 None,
             ),
-            (0.0, 772.0, 240.0)
+            (0.0, 748.0, 264.0)
         );
     }
 
@@ -9872,9 +9951,9 @@ mod tests {
                 anchor: ThumbnailStackAnchor::Bottom,
             }),
         );
-        assert_eq!(height, 240.0);
-        assert_eq!((x, y), (420.0, 280.0));
-        assert_eq!(y + height, 520.0);
+        assert_eq!(height, 264.0);
+        assert_eq!((x, y), (420.0, 256.0));
+        assert_eq!(y + 52.0 + 160.0 + 52.0, 520.0);
     }
 
     #[test]
@@ -9889,8 +9968,10 @@ mod tests {
         let four = stack_geometry(work, 4, true, Some(origin));
         assert_eq!(three.x, 420.0);
         assert_eq!(four.x, 420.0);
-        assert_eq!(three.y + three.height, 640.0);
-        assert_eq!(four.y + four.height, 640.0);
+        let three_padding = super::thumbnail_collapsed_padding(3);
+        let four_padding = super::thumbnail_collapsed_padding(4);
+        assert_eq!(three.y + three_padding + 160.0 + 52.0, 640.0);
+        assert_eq!(four.y + four_padding + 160.0 + 52.0, 640.0);
 
         // Auto-expanding that parked pile would size the window as the
         // expanded bar and clamp it to the work-area top — the stuck-drag
@@ -9898,15 +9979,13 @@ mod tests {
         let expanded = stack_geometry(work, 4, false, Some(origin));
         assert_eq!(expanded.y, 0.0);
         assert!(expanded.height > four.height);
-        assert_eq!(
-            thumbnail_window_top(
-                four.y,
-                expanded.height,
-                four.height,
-                ThumbnailStackAnchor::Bottom,
-            ),
-            640.0 - expanded.height,
+        let retained_y = thumbnail_window_top(
+            four.y,
+            expanded.height,
+            four.height,
+            ThumbnailStackAnchor::Bottom,
         );
+        assert!((retained_y + expanded.height - four_padding - 160.0 - 428.0).abs() < 1e-9);
     }
 
     #[test]
@@ -9923,27 +10002,72 @@ mod tests {
             }),
             crate::models::MiniPreviewPlacement::BottomLeft,
         );
-        assert_eq!(geometry.height, 240.0);
+        assert_eq!(geometry.height, 264.0);
         assert_eq!((geometry.x, geometry.y), (420.0, 0.0));
-        assert_eq!(geometry.anchor, ThumbnailStackAnchor::Top);
-        assert_eq!(
-            thumbnail_window_top(
-                geometry.y,
-                792.0,
-                geometry.height,
-                ThumbnailStackAnchor::Top
-            ),
-            0.0
+        assert_eq!(geometry.anchor, ThumbnailStackAnchor::Bottom);
+        let retained_y = thumbnail_window_top(geometry.y, 792.0, geometry.height, geometry.anchor);
+        assert_eq!(retained_y, -528.0);
+        assert_eq!(retained_y + 792.0 - 52.0 - 160.0, 52.0);
+    }
+
+    #[test]
+    fn collapsed_physical_frame_is_independent_of_expansion_anchor() {
+        let work = bounds((0, 0, 1_920, 1_040), (0, 0, 1_920, 1_080), 1.0);
+        let front_y = 420.0;
+        let top = stack_geometry(
+            work,
+            6,
+            true,
+            Some(ThumbnailStackOrigin {
+                x: 300.0,
+                edge: front_y - 52.0,
+                anchor: ThumbnailStackAnchor::Top,
+            }),
         );
-        assert_eq!(
-            thumbnail_window_top(
-                geometry.y,
-                792.0,
-                geometry.height,
-                ThumbnailStackAnchor::Bottom
-            ),
-            -552.0
+        let bottom = stack_geometry(
+            work,
+            6,
+            true,
+            Some(ThumbnailStackOrigin {
+                x: 300.0,
+                edge: front_y + 160.0 + 52.0,
+                anchor: ThumbnailStackAnchor::Bottom,
+            }),
         );
+        assert_eq!(top, bottom);
+        assert_eq!(top.anchor, ThumbnailStackAnchor::Bottom);
+        assert_eq!(top.y + super::thumbnail_collapsed_padding(6), front_y);
+    }
+
+    #[test]
+    fn collapsed_frame_preserves_tall_window_and_origin_round_trip() {
+        let count = 100;
+        let padding = super::thumbnail_collapsed_padding(count);
+        let desired_height = super::thumbnail_collapsed_frame_height(count);
+        assert_eq!(desired_height, 160.0 + 2.0 * padding);
+        assert!(desired_height > 264.0);
+
+        let retained_height = 1_400.0;
+        let actual_y = -300.0;
+        let front_y = actual_y + retained_height - padding - 160.0;
+        for anchor in [ThumbnailStackAnchor::Top, ThumbnailStackAnchor::Bottom] {
+            let virtual_y = super::thumbnail_collapsed_virtual_y(front_y, retained_height, anchor);
+            assert_eq!(
+                super::thumbnail_collapsed_front_y(virtual_y, retained_height, anchor),
+                front_y
+            );
+            let edge = if anchor.is_top() {
+                front_y - 52.0
+            } else {
+                front_y + 160.0 + 52.0
+            };
+            let recovered_front = if anchor.is_top() {
+                edge + 52.0
+            } else {
+                edge - 160.0 - 52.0
+            };
+            assert_eq!(recovered_front, front_y);
+        }
     }
 
     #[test]
@@ -9960,7 +10084,7 @@ mod tests {
                     anchor: ThumbnailStackAnchor::Bottom,
                 }),
             ),
-            (1_580.0, 788.0, 240.0)
+            (1_580.0, 764.0, 264.0)
         );
         assert_eq!(
             thumbnail_clamp_aligned_frame(
@@ -10086,7 +10210,8 @@ mod tests {
             }),
             crate::models::MiniPreviewPlacement::BottomLeft,
         );
-        assert_eq!(collapsed.y, 24.0);
+        assert!((collapsed.y - (76.0 - super::thumbnail_collapsed_padding(3))).abs() < 1e-9);
+        assert_eq!(collapsed.anchor, ThumbnailStackAnchor::Bottom);
         assert_eq!(expanded.y, 24.0);
         assert!(expanded.height > collapsed.height);
         assert_eq!(expanded.anchor, ThumbnailStackAnchor::Top);
@@ -10135,14 +10260,13 @@ mod tests {
 
     #[test]
     fn collapsed_stack_window_fits_the_receding_pile() {
-        assert_eq!(thumbnail_stack_height(1, true), 240.0);
-        assert_eq!(thumbnail_stack_height(1, false), 240.0);
-        assert!(thumbnail_stack_height(8, true) > thumbnail_stack_height(4, true));
-        assert!(thumbnail_stack_height(8, true) < thumbnail_stack_height(8, false));
+        assert_eq!(thumbnail_collapsed_frame_height(1), 264.0);
+        assert_eq!(thumbnail_stack_height(1), 240.0);
+        assert!(thumbnail_collapsed_frame_height(8) > thumbnail_collapsed_frame_height(4));
+        assert!(thumbnail_collapsed_frame_height(8) < thumbnail_stack_height(8));
         let pose_3 = 3.0 * (24.0 + 0.55 * 3.0) / (3.0 + 24.0);
         let peek = pose_3 * 16.0;
-        let extra_above_padding = f64::max(peek - 28.0, 0.0);
-        assert!((thumbnail_stack_height(4, true) - (240.0 + extra_above_padding)).abs() < 1e-9);
+        assert!((thumbnail_collapsed_frame_height(4) - (160.0 + 2.0 * (peek + 28.0))).abs() < 1e-9);
     }
 
     #[test]
