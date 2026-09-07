@@ -5,9 +5,6 @@ fn api() -> Command {
     command
         .env_remove("DATABASE_URL")
         .env_remove("MIGRATION_DATABASE_URL")
-        .env("WORKOS_API_KEY", "test")
-        .env("WORKOS_CLIENT_ID", "client_test")
-        .env("WORKOS_WEBHOOK_SECRET", "test")
         .env("CAPTURES_API_BIND", "127.0.0.1:0");
     command
 }

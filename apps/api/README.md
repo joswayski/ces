@@ -1,67 +1,51 @@
-# Captures account API
+# Captures account API foundation
 
-One Rust/Axum service owns Captures account persistence and authorization.
-TanStack owns the website and browser session cookie; WorkOS owns authentication.
-There are no uploads, billing, public profiles, organizations, or desktop login yet.
+The Rust/Axum service retains a provider-independent PostgreSQL users table and
+startup migrations for future account development. Authentication, account
+provisioning, and lifecycle webhooks are not available. There are no uploads,
+billing, public profiles, organizations, or desktop login.
 
 ## Endpoints
 
 | Route | Contract |
 | --- | --- |
-| `GET /health` | Public liveness; not a database/WorkOS readiness probe |
-| `GET /api/account/me` | WorkOS `Authorization: Bearer` token; resolves/provisions an account; returns `{email,emailVerified}` only |
-| `POST /api/webhooks/workos` | Signed WorkOS `user.updated` / `user.deleted` events; 256 KiB body limit |
+| `GET /health` | Public liveness; not a database readiness probe |
+| `GET /api/account/me` | Always 503 with `Cache-Control: no-store`; credentials do not enable access |
 
-Missing/invalid authentication returns 401, a disabled/deleted local account 403,
-and dependency failures 503. Account responses are `no-store`. Client-provided
-IDs/emails never select an account. The web server forwards its session access
-token server-side; browser-supplied authorization headers are ignored by its proxy.
-
-JWT validation uses RS256, the configured issuer, required subject/session/expiry,
-and client-scoped JWKS. An audience must match when present; WorkOS's default
-access-token contract does not require it. Keys cache for one hour, unknown-key
-refreshes are throttled, and HTTP calls have five-second timeouts. Each account
-request also retrieves the current WorkOS user (no cached user/API outage fallback).
-Revoked sessions can remain usable until access-token expiry; local disablement
-and confirmed WorkOS user deletion deny access independently. Keep WorkOS access
-tokens short-lived. This is not online session introspection.
+The website shows an unavailable notice at `/account`. It does not create sessions,
+forward access tokens, or connect to the Rust API. Local desktop capture is unaffected.
 
 ## Runtime configuration
 
-Set environment variables in the process environment; the Rust binary does not
-load `.env` files itself. Never put secrets in the image or desktop bundle.
+Set variables in the process environment; the Rust binary does not load `.env`
+files itself. Never put secrets in the image or desktop bundle.
 
 | Variable | Required/default |
 | --- | --- |
 | `DATABASE_URL` | Captures runtime role, pooled PlanetScale port **6432**, database **`captures`** |
-| `MIGRATION_DATABASE_URL` | Captures migration role, direct port **5432**, same host and **`captures`** database; required at API startup |
-| `WORKOS_API_KEY` | Captures environment's secret API key |
-| `WORKOS_CLIENT_ID` | Matching Captures environment client ID |
-| `WORKOS_WEBHOOK_SECRET` | Secret for that environment's webhook endpoint |
-| `WORKOS_ISSUER` | `https://api.workos.com/`; use the exact token issuer for custom AuthKit domains |
+| `MIGRATION_DATABASE_URL` | Captures migration role, direct port **5432**, same host and database; required at startup |
 | `CAPTURES_API_BIND` | `127.0.0.1:3001`; image uses `0.0.0.0:3001` |
-| `RUST_LOG` | Optional log filter; do not enable request/body or SQL parameter logging in production |
+| `RUST_LOG` | Optional filter; do not enable request/body or SQL parameter logging in production |
+
+The Node website receives neither database URL nor account secrets.
 
 ## Shared cluster, dedicated database, separate credentials
 
-Use a named PostgreSQL database **`captures`** inside the existing PlanetScale
+Use the named PostgreSQL database **`captures`** in the existing PlanetScale
 `projects/main` cluster, alongside Caper's `caperchat` database. This is not a
-second paid cluster. The database and its roles must be created before startup;
-changing the URL path does not create a database. Databases separate application
-objects/access, but still share cluster compute, storage capacity and failure modes.
+second paid cluster. Create the database and roles before startup; changing a URL
+path does not create a database. Database separation still shares cluster compute,
+storage capacity, and failure modes.
 
-Inside that database, everything including SQLx's `_sqlx_migrations` ledger stays
-in the `captures` schema. The schema is an additional namespace, not a replacement
-for a dedicated database. No shared `public.users` or email uniqueness constraint.
-Users have an internal bigint ID and unique WorkOS ID; no public identifier.
-WorkOS email and verification state are only a synchronized cache.
+All application objects, including SQLx's `_sqlx_migrations` ledger, stay in the
+`captures` schema. Users retain an internal bigint ID, nullable email, verification
+state (false by default), creation/update timestamps, and disabled/deleted timestamps.
+Deleted rows must have no email. There is no public identifier or email uniqueness
+constraint. No account writes are currently exposed by the service.
 
-Runtime queries explicitly qualify the `captures` schema; runtime connections
-must not send a `search_path` startup option, which PlanetScale's pooler rejects.
-Only the direct migration connection sets that option, keeping SQLx's migration
-ledger in `captures` without relying on pooled session state.
-
-Example (placeholders, not credentials):
+Runtime queries must explicitly qualify the schema. Runtime connections must not
+send a `search_path` startup option, which PlanetScale's pooler rejects. Only the
+direct migration connection sets it, keeping the migration ledger isolated.
 
 ```dotenv
 DATABASE_URL=postgresql://captures_app:PASSWORD@HOST:6432/captures?sslmode=verify-full
@@ -70,72 +54,87 @@ MIGRATION_DATABASE_URL=postgresql://captures_migrator:PASSWORD@HOST:5432/capture
 
 Remote URLs require `sslmode=verify-full`, an explicit non-default database name,
 and matching hosts/database paths. Migration URLs reject pooled port 6432 and
-require direct port 5432 remotely; local loopback tests may use other ports and
-plaintext. Only `sslmode`, `sslrootcert`, and `application_name` query parameters
-are accepted so connection overrides cannot bypass those checks.
-
-With SQLx 0.8's `runtime-tokio-rustls`, omit `sslrootcert` to use bundled public
-WebPKI roots, or point it to a real CA PEM file mounted in the API container.
-**Do not copy `sslrootcert=system` from a libpq URL**: SQLx treats it as a filename,
-not the system trust store. Captures rejects that value instead of weakening TLS.
+require direct port 5432 remotely; loopback tests may use other ports and plaintext.
+Only `sslmode`, `sslrootcert`, and `application_name` URL parameters are accepted.
+With SQLx 0.8's `runtime-tokio-rustls`, omit `sslrootcert` for bundled public roots,
+or use a real CA PEM file mounted in the API container. Do not use
+`sslrootcert=system`: SQLx treats it as a filename.
 
 Use separate migration-owner and runtime roles; neither should be cluster admin.
-The migration owner must be able to create/own the schema. At **every API startup**:
+The migration owner must be able to create/own the schema. At every API startup:
 
-1. Require and validate both URLs. Never fall back to `DATABASE_URL` for DDL.
-2. Run migrations through a single direct migration connection, before listening.
-   Bootstrap schema creation and SQLx migrations use PostgreSQL advisory locks to
-   serialize concurrent replicas. Connection/bootstrap and migration stages each
-   have a five-minute timeout; failures prevent API startup.
-3. Close the migration connection, then open the least-privilege runtime pool.
+1. Validate both URLs; never fall back to runtime credentials for DDL.
+2. Run migrations through one direct connection before listening. Advisory locks
+   serialize concurrent schema bootstrap and SQLx migrations. Bootstrap and
+   migration stages each have a five-minute timeout; failures prevent startup.
+3. Close the migration connection, then open the runtime pool.
 
-The API pod therefore receives **both** secrets; the web pod receives **neither**.
-Closing a connection does not remove the migration secret from the API process
-environment, so startup convenience carries broader credential exposure than a
-separate migration runner. There is no Job dependency. Keep future migrations
-backward-compatible with the old pods during rolling updates, allow adequate
-startup-probe time, and avoid destructive changes during mixed-version rollouts.
-
-The explicit migration command is still available for diagnostics/manual use:
+The API receives both secrets. Closing the migration connection does not remove
+its secret from the process environment. The explicit diagnostic command needs
+only `MIGRATION_DATABASE_URL`:
 
 ```sh
 cargo run -p captures-api -- migrate
 ```
 
-This command needs only `MIGRATION_DATABASE_URL`, never the runtime URL or WorkOS
-credentials. Running it against a shared environment still requires operator approval.
-Provision a `captures_app` login through the database's role-management tooling,
-then grant only the following with the schema owner (adapt role names):
+Grant the runtime role access with the schema owner (adapt role names):
 
 ```sql
 GRANT USAGE ON SCHEMA captures TO captures_app;
 GRANT SELECT, INSERT, UPDATE ON captures.users TO captures_app;
-GRANT SELECT, INSERT ON captures.workos_events TO captures_app;
 GRANT USAGE ON SEQUENCE captures.users_id_seq TO captures_app;
 ```
 
-Audit database `CONNECT`, schema and role-inheritance privileges: naming alone is
-**not** a security boundary. Restrict the new database/app roles without globally
-revoking privileges needed by other apps.
-Use a disposable database for local development, not the shared production branch.
+Audit database `CONNECT`, schema, and role-inheritance privileges without globally
+revoking access needed by other apps. Use a disposable database for development.
 
-### Lifecycle
+## One-time reset of the unused account schema
 
-The first authenticated account lookup atomically upserts by WorkOS ID. Email
-matches never merge accounts. `disabled_at` is operator-controlled and synchronization
-never clears it. Webhook receipts and account changes commit together before 200;
-duplicates and stale updates do not overwrite newer data. Updates alone do not
-create local accounts. Deletion creates a tombstone even before first login, clears
-cached email, and cannot be undone by a delayed callback/update. A confirmed user
-404 from WorkOS takes the same path. Other WorkOS failures do not delete accounts.
+The initial migration was rewritten deliberately, not extended with an upgrade
+migration. Existing ledgers have a different checksum. Do not roll out the new
+API against the old schema or merely change the ledger checksum.
 
-Tombstones retain the internal/WorkOS IDs to prevent resurrection; this is not a
-complete self-service account deletion/retention system. That policy and UI are
-future work. Configure only `user.updated` and `user.deleted` webhook events and
-monitor failed deliveries. Retry failed events through WorkOS; a deployment outage
-beyond its retry window requires reconciliation before reopening account access.
-Event receipts contain no full user payloads; an automated pruning policy is not
-included yet.
+For the approved empty installation, stop the old API and prevent reconciliation
+from restarting it before resetting. From the infrastructure checkout, suspend
+its application reconciliation and scale down:
+
+```sh
+flux suspend kustomization production-apps -n flux-system
+kubectl -n default scale deployment/captures-api --replicas=0
+kubectl -n default wait --for=delete pod -l app.kubernetes.io/name=captures-api --timeout=5m
+```
+
+From this checkout, set `MIGRATION_DATABASE_URL` securely to the direct **captures**
+database as the migration owner, then run the scoped reset and new migration.
+This destroys only the `captures` schema and its unused account data/ledger:
+
+```sh
+psql "$MIGRATION_DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+DO $$ BEGIN
+  IF current_database() <> 'captures' THEN
+    RAISE EXCEPTION 'Expected captures database';
+  END IF;
+END $$;
+DROP SCHEMA captures CASCADE;
+SQL
+cargo run -p captures-api -- migrate
+```
+
+Reapply the runtime grants above because recreated objects lose their grants.
+Verify the new API image pin in infrastructure `main` before resuming reconciliation; never restart the old
+API against the reset schema. Resume and verify from the infrastructure checkout:
+
+```sh
+flux resume kustomization production-apps -n flux-system
+flux reconcile kustomization production-apps -n flux-system --with-source
+kubectl -n default rollout status deployment/captures-api --timeout=15m
+kubectl -n default exec deployment/captures-web -- node -e \
+  'fetch("http://captures-api/api/account/me").then(r=>{console.log(r.status);if(r.status!==503)process.exit(1)})'
+```
+
+The account endpoint must return 503. Coordinate this reset with Caper's separate
+`caperchat` reset and deploy both provider-free websites before removing old secret
+projections. No reset or deployment happens merely by publishing an image.
 
 ## Build and test
 
@@ -144,67 +143,37 @@ cargo test -p captures-api
 cargo clippy -p captures-api --all-targets -- -D warnings
 cargo build --locked --release -p captures-api
 docker build -f apps/api/Dockerfile -t captures-api .
-```
-
-Run the PostgreSQL integration test explicitly against a **disposable** server
-whose test role can create databases:
-
-```sh
 TEST_DATABASE_URL=postgres://captures_test@127.0.0.1:55432/postgres \
   cargo test -p captures-api -- --include-ignored
 ```
 
-It creates a uniquely named test database, concurrently runs startup migrations,
-checks email identity isolation, stale events, disabled/deleted accounts and transactional
-receipts, then drops that database. Never supply production credentials here.
-Other tests use local mock WorkOS/JWKS endpoints and generated RSA test keys.
+The ignored PostgreSQL test creates a unique disposable database, concurrently
+runs startup migrations, verifies schema/ledger isolation, checks the generic
+users columns and unverified defaults, and drops that database. The test role
+must be able to create databases. Never supply production credentials.
 
-## Image publication
+## Image publication and routing
 
-The `AWS API image` workflow builds the non-root `linux/arm64` API image on pull
-requests and merges to `main`. A disposable PostgreSQL container verifies automatic
-migrations, restart, health, unauthenticated account rejection, and closure of the
-migration connection. No real database or WorkOS credentials are used in CI.
+The `AWS API image` workflow builds a non-root `linux/arm64` API image on PRs and
+merges. A disposable PostgreSQL container checks migrations, restart, health,
+account unavailability, and closure of the migration connection.
 
-After those checks pass on `main`, the workflow publishes that tested image to
-the existing `production/captures` ECR repository as **`api-<full Git SHA>`**.
-The website keeps its existing unprefixed SHA tags. Both use the existing Captures
-OIDC publisher role; there is no new ECR repository or publisher credential.
-Reruns preserve an existing immutable tag, and the workflow summary records the
-digest. Deployment must pin both the tag and digest, never `latest`.
+On `main`, the tested image is published to `production/captures` in ECR as
+`api-<full Git SHA>`. Website images retain unprefixed SHA tags. Both use the
+existing OIDC publisher role. Reruns preserve immutable tags; deploy by tag and
+digest, never `latest`.
 
-Successful API publication sends **Captures API image is ready** to the existing
-`DEPLOY_NOTIFICATION_WEBHOOK_URL`, with a **Deploy Captures API** button and the
-exact SHA/digest. Web notifications separately say **Captures web**. The API button
-uses Godis's `captures-api` route to `deploy-captures-api.yml`; deploy a Godis version
-supporting that route before using it. **Open GitHub** links to the API workflow as
-a fallback. No new webhook secret is needed. Missing webhook configuration skips
-the notification; a delivery error fails the notification step and can be retried
-without overwriting the immutable image.
+Successful publication sends a **Captures API image is ready** notification with
+an exact SHA/digest through `DEPLOY_NOTIFICATION_WEBHOOK_URL`. The **Deploy
+Captures API** button uses Godis's `captures-api` route to
+`deploy-captures-api.yml`; **Open GitHub** is the workflow fallback. Missing webhook
+configuration skips notification. A failed notification can be retried without
+overwriting the image. Publication does not deploy or configure secrets.
 
-Publishing does not deploy or configure secrets. Follow the Captures account
-activation procedure in `joswayski/infrastructure` for the first rollout, then
-its API deployment workflow for subsequent pins. The API and website are separate
-images and must both include compatible account code before enabling login.
+- `captur.es` routes to `captures-web`: website, feedback, and updater routes.
+- `api.captur.es/api/*` routes to `captures-api`: unavailable account endpoint.
+- Keep Rust `/health` internal. No native login or token storage is implemented or
+  claimed tested on macOS, Windows, or Linux.
 
-## Public API routing
-
-- **`captur.es` → `captures-web`**: website, browser AuthKit callback, session cookie,
-  and existing feedback/updater routes. The npm package remains `@captures/web`.
-- **`api.captur.es/api/*` → `captures-api`**: public Rust account API and signed
-  WorkOS webhooks. Native/desktop/mobile clients call this origin directly using
-  WorkOS access tokens; there is no `/api/native` gateway through the website.
-- The website may call Rust server-side through `CAPTURES_API_URL` (the internal
-  Service address or HTTPS public origin) using the browser session's token.
-  Its same-origin account endpoint is for browser cookie sessions, not a required
-  gateway for other clients. No credentialed cross-origin browser CORS is enabled.
-
-Public means internet-reachable, not anonymous: Rust validates bearer JWTs, and the
-webhook endpoint validates WorkOS signatures. Keep `/health` internal. Deployment
-requires a Rust image pin, Service/Ingress, Cloudflare Tunnel hostname route, DNS
-and TLS for `api.captur.es`; a Kubernetes Ingress alone is insufficient. Register
-the webhook URL as `https://api.captur.es/api/webhooks/workos`.
-
-No native login UI/token storage flow is implemented or claimed tested on macOS,
-Windows or Linux. These changes do not deploy the service, create the logical
-database, apply PlanetScale migrations, or change WorkOS/Cloudflare configuration.
+Infrastructure still owns Service/Ingress, Tunnel routing, DNS, TLS, and deployment
+pins. No cluster, production database, or cloud configuration is changed by tests.
