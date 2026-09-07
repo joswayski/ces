@@ -16,8 +16,8 @@ The optional Rust account API also needs PostgreSQL for database integration
 tests. It does not participate in local desktop capture. See
 [`apps/api/README.md`](apps/api/README.md) for configuration, schema isolation,
 migrations and tests, and [`apps/web/README.md`](apps/web/README.md#optional-accounts)
-for WorkOS browser setup. `npm run check` includes an offline AuthKit callback,
-session and CSRF integration test against the built website; it sends no emails.
+for the account placeholder. Sign-in is unavailable. `npm run check` verifies
+that account requests fail closed and the built public website still works.
 The offline deployment-notification tests also require Bash and `jq` on PATH
 (including on Windows); they intercept HTTP calls and send no Discord messages.
 

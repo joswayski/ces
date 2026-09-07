@@ -43,8 +43,7 @@ jobs:
           docker run -d --name captures-api-test --network host \
             -e DATABASE_URL='postgres://captures_test@127.0.0.1:5432/captures_test?application_name=runtime' \
             -e MIGRATION_DATABASE_URL='postgres://captures_test@127.0.0.1:5432/captures_test?application_name=migration' \
-            -e WORKOS_API_KEY=test -e WORKOS_CLIENT_ID=client_test \
-            -e WORKOS_WEBHOOK_SECRET=test captures-api:test
+            captures-api:test
           for attempt in first restart; do
             if [[ "$attempt" == restart ]]; then docker restart captures-api-test; fi
             ready=false
@@ -54,7 +53,7 @@ jobs:
             done
             if [[ "$ready" != true ]]; then docker logs captures-api-test; exit 1; fi
             test "$(curl -fsS http://127.0.0.1:3001/health)" = '{"status":"ok"}'
-            test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/api/account/me)" = 401
+            test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/api/account/me)" = 503
             test "$(docker exec captures-db-test psql -U captures_test -Atc \
               'SELECT count(*) FROM captures._sqlx_migrations WHERE success')" -gt 0
             test "$(docker exec captures-db-test psql -U captures_test -Atc \

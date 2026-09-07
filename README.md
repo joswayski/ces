@@ -85,11 +85,10 @@ Preview builds automatically publish installed-app changes from `main`, and may 
 ## Optional cloud accounts — in development
 
 Local screenshots, GIFs, and recordings never require an account. The website
-includes an optional account foundation at `/account`, using WorkOS email
-one-time codes when configured by the operator. Captures stores an internal
-account mapping and email/verification state in PostgreSQL; WorkOS manages login
-and authentication sessions. No captures are uploaded by signing in. Hosted
-uploads, sharing, Google login, and desktop sign-in are not implemented yet.
+shows an unavailable notice at `/account`; sign-in and account creation are not
+available. A provider-independent users table is retained in PostgreSQL for
+future development. Hosted uploads, sharing, and browser or desktop sign-in are
+not implemented yet.
 
 ## Wishlist
 
