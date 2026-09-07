@@ -134,9 +134,12 @@ export type ThumbnailCardPose = {
 /**
  * Snapshot each collapsed card's live pose so expand can ease from a
  * latched rest pose, a mid-fan tween, or the full hover fan without snapping.
+ * A frame offset compensates when the native expanded window is clamped to a
+ * different screen position before the card animation begins.
  */
 export function captureThumbnailCardPoses(
   stack: Element | null,
+  frameOffset: { x: number; y: number } = { x: 0, y: 0 },
 ): Map<string, ThumbnailCardPose> {
   const captured = new Map<string, ThumbnailCardPose>();
   if (!stack) return captured;
@@ -147,7 +150,9 @@ export function captureThumbnailCardPoses(
     if (!transform || transform === "none") return;
     const media = card.querySelector(".thumbnail-media");
     captured.set(id, {
-      transform,
+      transform: frameOffset.x === 0 && frameOffset.y === 0
+        ? transform
+        : `translate3d(${frameOffset.x}px, ${frameOffset.y}px, 0) ${transform}`,
       blur: media ? getComputedStyle(media).filter : "none",
       dim: getComputedStyle(card, "::before").opacity,
     });

@@ -7189,9 +7189,16 @@ export function Thumbnail() {
       return;
     }
     pendingNewestReveal.current = true;
+    const collapsedFramePosition = { x: window.screenX, y: window.screenY };
     void invoke("set_mini_previews_collapsed", { collapsed: false })
       .then(() => {
-        setExpandFromPoses(captureThumbnailCardPoses(stackRef.current));
+        setExpandFromPoses(captureThumbnailCardPoses(stackRef.current, {
+          // Native expansion can clamp the larger frame back into the work
+          // area. Offset the first animation frame by that window movement so
+          // the pile stays pinned on screen instead of teleporting first.
+          x: collapsedFramePosition.x - window.screenX,
+          y: collapsedFramePosition.y - window.screenY,
+        }));
         cancelHoverReady();
         setStackMinimizeRun(false);
         setStackHoverLatched(false);

@@ -211,6 +211,12 @@ describe("thumbnail stack layout", () => {
       blur: "blur(1.4px)",
       dim: "0.23",
     });
+    expect(captureThumbnailCardPoses(stack, { x: -12, y: 84 }).get("capture-1"))
+      .toEqual({
+        transform: `translate3d(-12px, 84px, 0) ${computed.transform}`,
+        blur: "blur(1.4px)",
+        dim: "0.23",
+      });
     expect(captureThumbnailCardPoses(stack).has("missing")).toBe(false);
     expect(thumbnailStyles).toContain("opacity: var(--thumbnail-stack-expand-dim-from, 0)");
     expect(thumbnailStyles).toContain("filter: var(--thumbnail-stack-expand-blur-from, blur(0px))");
