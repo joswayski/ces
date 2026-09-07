@@ -785,7 +785,12 @@ async fn prepare_capture(
         if includes_capture_ui {
             recording::dismiss_capture_menu_after_nested_snapshot(&app, &state);
         }
-        let snapshot_png = storage::encode_overlay_snapshot(&frame.image)?;
+        let snapshot_png = encode_overlay_snapshot_with_cursor(
+            &frame.image,
+            &frame.descriptor,
+            pointer,
+            state.settings().show_cursor_in_screenshots,
+        )?;
         let (targets, pending_windows) =
             take_ready_or_defer_windows(windows_task, &frame.descriptor, Some(&frame.image));
         (
@@ -3948,6 +3953,19 @@ fn apply_screenshot_cursor(
     );
 }
 
+/// Encode an overlay-only copy so the frozen selector reflects the cursor
+/// setting without baking that glyph into the source used for the final crop.
+pub(crate) fn encode_overlay_snapshot_with_cursor(
+    image: &RgbaImage,
+    display: &captures_capture::DisplayDescriptor,
+    pointer: Option<(i32, i32)>,
+    enabled: bool,
+) -> Result<Vec<u8>, AppError> {
+    let mut snapshot = image.clone();
+    apply_screenshot_cursor(&mut snapshot, display, pointer, enabled);
+    storage::encode_overlay_snapshot(&snapshot)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn apply_screenshot_cursor_in_crop(
     image: &mut RgbaImage,
@@ -5555,8 +5573,8 @@ fn create_overlay_window(app: &AppHandle) -> Result<(), tauri::Error> {
     Ok(())
 }
 
-const STARTUP_NOTICE_WIDTH: f64 = 240.0;
-const STARTUP_NOTICE_HEIGHT: f64 = 36.0;
+const STARTUP_NOTICE_WIDTH: f64 = 296.0;
+const STARTUP_NOTICE_HEIGHT: f64 = 54.0;
 /// Transparent padding around the rounded card so `--shadow-md` is not clipped.
 /// Dark `--shadow-md` is `0 8px 20px`, so the blur plus Y offset needs 28px.
 const TRAY_NOTICE_FRAME_PAD: f64 = 28.0;
@@ -6152,8 +6170,17 @@ fn place_tray_notice(
     }
 }
 
-const RECORDING_SAVED_NOTICE_WIDTH: f64 = 440.0;
-const RECORDING_SAVED_NOTICE_HEIGHT: f64 = 116.0;
+const RECORDING_SAVED_NOTICE_CARD_WIDTH: f64 = 440.0;
+const RECORDING_SAVED_NOTICE_CARD_HEIGHT: f64 = 116.0;
+/// Transparent padding around the notice card so its glass shadow is not clipped
+/// by the transparent native window.
+const RECORDING_SAVED_NOTICE_FRAME_PAD: f64 = 28.0;
+const RECORDING_SAVED_NOTICE_WIDTH: f64 =
+    RECORDING_SAVED_NOTICE_CARD_WIDTH + RECORDING_SAVED_NOTICE_FRAME_PAD * 2.0;
+const RECORDING_SAVED_NOTICE_HEIGHT: f64 =
+    RECORDING_SAVED_NOTICE_CARD_HEIGHT + RECORDING_SAVED_NOTICE_FRAME_PAD * 2.0;
+const RECORDING_SAVED_NOTICE_VISIBLE_FOR: std::time::Duration =
+    std::time::Duration::from_millis(15_200);
 const RECORDING_CONTROLS_HIDDEN_NOTICE_CARD_WIDTH: f64 = 418.0;
 const RECORDING_CONTROLS_HIDDEN_NOTICE_CARD_HEIGHT: f64 = 74.0;
 /// Transparent padding around the notice card so its glass shadow is not clipped
@@ -6234,7 +6261,7 @@ fn show_recording_saved_notice(app: &AppHandle, artifact_id: &str) -> Result<(),
     let timer_app = app.clone();
     let timer_state = state;
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(11_200));
+        std::thread::sleep(RECORDING_SAVED_NOTICE_VISIBLE_FOR);
         let handle = timer_app.clone();
         let _ = timer_app.run_on_main_thread(move || {
             if timer_state
@@ -8781,7 +8808,10 @@ mod tests {
     use super::macos_window_is_capture_overlay;
     use super::{
         AppError, AppReactivation, CaptureMode, InteractiveLaunchAction, LogicalRect,
-        PreviewFileDropLanding, STARTUP_NOTICE_AFTER_SETUP_VISIBLE,
+        PreviewFileDropLanding, RECORDING_SAVED_NOTICE_CARD_HEIGHT,
+        RECORDING_SAVED_NOTICE_CARD_WIDTH, RECORDING_SAVED_NOTICE_FRAME_PAD,
+        RECORDING_SAVED_NOTICE_HEIGHT, RECORDING_SAVED_NOTICE_VISIBLE_FOR,
+        RECORDING_SAVED_NOTICE_WIDTH, STARTUP_NOTICE_AFTER_SETUP_VISIBLE,
         STARTUP_NOTICE_AUTOSTART_VISIBLE, STARTUP_NOTICE_HEIGHT, STARTUP_NOTICE_WIDTH,
         StartupNoticeCaret, THUMBNAIL_AUTO_HIDE_RESERVE, THUMBNAIL_SYSTEM_CHROME_GAP,
         TRAY_NOTICE_CARET_INSET, TRAY_NOTICE_CARET_SIZE, TRAY_NOTICE_FRAME_PAD,
@@ -8790,9 +8820,10 @@ mod tests {
         ThumbnailStackOrigin, ThumbnailWindowFrame, ThumbnailWindowGeometry, app_reactivation,
         capturable_windows_for_display, capture_cursor_icon, classify_preview_file_drop,
         click_through_applies, clipboard_fingerprint, display_contains_pointer,
-        drag_plugin_cursor_to_pointer_space, fallback_startup_notice, freeze_prefetch_can_start,
-        interactive_launch_action, mask_macos_window_corners, parse_shortcut, place_startup_notice,
-        preferences_url, primary_app_window_priority, recording::RECORDING_REGION_INDICATOR_TITLE,
+        drag_plugin_cursor_to_pointer_space, encode_overlay_snapshot_with_cursor,
+        fallback_startup_notice, freeze_prefetch_can_start, interactive_launch_action,
+        mask_macos_window_corners, parse_shortcut, place_startup_notice, preferences_url,
+        primary_app_window_priority, recording::RECORDING_REGION_INDICATOR_TITLE,
         recording_chrome_should_restore_after_snapshot, refine_window_chrome_from_snapshot,
         resolve_startup_notice_placement, resolve_window_capture,
         screenshot_countdown_seconds_for_capture_ui, should_claim_region_cursor_after_freeze,
@@ -10843,6 +10874,21 @@ mod tests {
     }
 
     #[test]
+    fn recording_saved_notice_reserves_a_full_shadow_frame() {
+        assert_eq!(
+            (RECORDING_SAVED_NOTICE_WIDTH, RECORDING_SAVED_NOTICE_HEIGHT),
+            (
+                RECORDING_SAVED_NOTICE_CARD_WIDTH + RECORDING_SAVED_NOTICE_FRAME_PAD * 2.0,
+                RECORDING_SAVED_NOTICE_CARD_HEIGHT + RECORDING_SAVED_NOTICE_FRAME_PAD * 2.0,
+            )
+        );
+        assert_eq!(
+            RECORDING_SAVED_NOTICE_VISIBLE_FOR,
+            std::time::Duration::from_millis(15_200)
+        );
+    }
+
+    #[test]
     fn tray_accelerators_use_menu_key_names_instead_of_code_tokens() {
         assert_eq!(
             tray_accelerator("CommandOrControl+Shift+Digit4").as_deref(),
@@ -10900,6 +10946,20 @@ mod tests {
             scale_factor: 2.0,
             is_primary: true,
         }
+    }
+
+    #[test]
+    fn overlay_snapshot_shows_the_cursor_without_mutating_the_capture_source() {
+        let source = RgbaImage::from_pixel(100, 100, Rgba([0, 0, 0, 255]));
+        let snapshot =
+            encode_overlay_snapshot_with_cursor(&source, &test_display(), Some((10, 12)), true)
+                .expect("snapshot encoded");
+        let decoded = image::load_from_memory(&snapshot)
+            .expect("snapshot decoded")
+            .to_rgba8();
+
+        assert!(decoded.pixels().any(|pixel| pixel.0 == [24, 24, 24, 255]));
+        assert!(source.pixels().all(|pixel| pixel.0 == [0, 0, 0, 255]));
     }
 
     #[test]

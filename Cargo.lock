@@ -536,6 +536,7 @@ dependencies = [
 name = "captures-capture"
 version = "0.1.0"
 dependencies = [
+ "core-foundation 0.10.1",
  "core-graphics 0.25.0",
  "image",
  "serde",

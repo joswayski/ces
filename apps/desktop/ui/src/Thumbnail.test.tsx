@@ -2150,7 +2150,7 @@ describe("Thumbnail", () => {
       .closest(".thumbnail-stack-toolbar")).toHaveClass("thumbnail-stack-toolbar-anchor-right");
   });
 
-  it("eases the hover fan closed before the dragged pile starts leaning", async () => {
+  it("keeps the hover pose on press and gathers only when a drag starts", async () => {
     render(<Thumbnail />);
     const card = await screen.findByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
@@ -2168,7 +2168,10 @@ describe("Thumbnail", () => {
       screenX: 40,
       screenY: 80,
     });
-    expect(stack).toHaveClass("thumbnail-stack-pressing");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(thumbnailStackFanCollapseMs(1) + 100);
+    });
+    expect(stack).not.toHaveClass("thumbnail-stack-pressing");
     expect(stack).not.toHaveClass("thumbnail-stack-drag-sway");
 
     fireEvent.pointerMove(window, {
@@ -2181,6 +2184,7 @@ describe("Thumbnail", () => {
       await Promise.resolve();
     });
     expect(stack).toHaveClass("thumbnail-stack-dragging");
+    expect(stack).toHaveClass("thumbnail-stack-pressing");
     expect(stack).not.toHaveClass("thumbnail-stack-drag-sway");
 
     await act(async () => {

@@ -174,7 +174,8 @@ import {
   thumbnailStackOverflow,
   restoreThumbnailStackShiftClass,
   thumbnailCollapsedPeekPx,
-  captureThumbnailCardTransforms,
+  captureThumbnailCardPoses,
+  type ThumbnailCardPose,
   thumbnailStackFanCollapseMs,
   thumbnailStackPeekJitterPx,
   THUMBNAIL_CARD_HEIGHT_PX,
@@ -468,11 +469,30 @@ function TrayNoticeShell({
 }
 
 export function StartupNotice() {
+  const [shortcut, setShortcut] = useState("CommandOrControl+Shift+Space");
+
+  useEffect(() => {
+    void invoke<AppSettings>("get_settings")
+      .then((settings) => {
+        if (settings.new_capture_shortcut.trim()) {
+          setShortcut(settings.new_capture_shortcut);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const keys = shortcutDisplayTokens(shortcut);
+
   return (
     <TrayNoticeShell className="startup-notice">
-      <p className="startup-notice-card" role="status">
-        Captures is ready to use
-      </p>
+      <div className="startup-notice-card" role="status">
+        <strong>Captures is ready to use</strong>
+        <p>
+          Open New Capture with {keys.map((key, index) => (
+            <kbd key={`${key}-${index}`}>{key}</kbd>
+          ))}
+        </p>
+      </div>
     </TrayNoticeShell>
   );
 }
@@ -2028,13 +2048,20 @@ export function RecordingRegionIndicator() {
   useEffect(() => {
     if (!rect) return;
     let active = true;
-    afterNextPaint(() => {
-      if (active) {
-        void invoke("reveal_recording_region_indicator");
-      }
-    });
+    let revealed = false;
+    const reveal = () => {
+      if (!active || revealed) return;
+      revealed = true;
+      window.clearTimeout(timer);
+      void invoke("reveal_recording_region_indicator").catch(console.error);
+    };
+    // WKWebView can defer animation frames even on a primed native window.
+    // Match the selector's bounded reveal rather than blocking recording.
+    const timer = window.setTimeout(reveal, RECORDING_SELECTOR_REVEAL_FALLBACK_MS);
+    afterNextPaint(reveal);
     return () => {
       active = false;
+      window.clearTimeout(timer);
     };
   }, [rect]);
   if (!rect) {
@@ -2763,14 +2790,18 @@ export function RecordingSelector() {
         await invoke("capture_selection_screenshot", {
           request: { selection_id: currentSession.id, target },
         });
+        if (activeSessionIdRef.current !== currentSession.id) return;
         activeSessionIdRef.current = null;
+        sessionRef.current = null;
         revealingSessionIdRef.current = null;
         setSession(null);
         clearRegionDrag();
       } catch (error) {
+        if (activeSessionIdRef.current !== currentSession.id) return;
         const message = String(error);
         if (message.includes("screenshot cancelled")) {
           activeSessionIdRef.current = null;
+          sessionRef.current = null;
           revealingSessionIdRef.current = null;
           setSession(null);
           clearRegionDrag();
@@ -2809,11 +2840,14 @@ export function RecordingSelector() {
       await invoke("start_recording", {
         request: { selection_id: currentSession.id, options },
       });
+      if (activeSessionIdRef.current !== currentSession.id) return;
       activeSessionIdRef.current = null;
+      sessionRef.current = null;
       revealingSessionIdRef.current = null;
       setSession(null);
       clearRegionDrag();
     } catch (error) {
+      if (activeSessionIdRef.current !== currentSession.id) return;
       setError(String(error));
       setStarting(false);
     }
@@ -2875,10 +2909,19 @@ export function RecordingSelector() {
     Math.max(session.window_coordinate_scale || 1, 1),
   );
   const onPointerDown = (event: React.PointerEvent) => {
+    if (starting || switchingDisplay || event.button !== 0) return;
     if ((event.target as Element).closest(".recording-selector-panel")) return;
+    if (targetMode === "display") {
+      if (settingsRef.current?.auto_start_on_selection) void start();
+      return;
+    }
     if (targetMode === "window") {
       const hit = windowAtPointer(event);
       if (hit?.kind === "window") {
+        if (selectedWindow === hit.target.id && settingsRef.current?.auto_start_on_selection) {
+          void start();
+          return;
+        }
         setSelectedWindow(hit.target.id);
         setHoveredWindow(hit.target.id);
         setHoveredDisplay(false);
@@ -2900,7 +2943,7 @@ export function RecordingSelector() {
     }
     if (targetMode !== "region") return;
     event.preventDefault();
-    const start = point(event);
+    const origin = point(event);
     const target = event.target as Element;
     const handle = target.closest<HTMLElement>("[data-selection-handle]")?.dataset.selectionHandle as SelectionDragMode | undefined;
     const mode: SelectionDragMode = handle
@@ -2909,15 +2952,15 @@ export function RecordingSelector() {
     event.currentTarget.setPointerCapture(event.pointerId);
     clearRegionDrag();
     pendingRegionForceSquareRef.current = event.shiftKey;
-    pendingRegionPointRef.current = start;
+    pendingRegionPointRef.current = origin;
     regionDragRef.current = {
       mode,
-      origin: start,
-      initial: region ?? { x: start.x, y: start.y, width: 0, height: 0 },
+      origin,
+      initial: region ?? { x: origin.x, y: origin.y, width: 0, height: 0 },
     };
     if (mode === "create") {
       setRegionSelecting(true);
-      setRegion({ x: start.x, y: start.y, width: 0, height: 0 });
+      setRegion({ x: origin.x, y: origin.y, width: 0, height: 0 });
     }
   };
   const onPointerMove = (event: React.PointerEvent) => {
@@ -3022,9 +3065,6 @@ export function RecordingSelector() {
   const activeWindowCornerRadius = activeWindowLayout?.cornerRadius ?? session.window_corner_radius;
   const displayCornerRadius = Math.max(0, session.display_corner_radius ?? 0);
   const canStart = canStartSelection;
-  const snapshotClipPath = targetMode === "region" && selectedRect
-    ? captureDimClipPath(selectedRect)
-    : undefined;
 
   const switchDisplay = async (displayId: string) => {
     if (displayId === session.display.id || switchingDisplay || starting) return;
@@ -3147,7 +3187,6 @@ export function RecordingSelector() {
           src={session.snapshot_url}
           alt=""
           draggable={false}
-          style={snapshotClipPath ? { clipPath: snapshotClipPath } : undefined}
           onLoad={() => revealSelector(session.id, freezeFrameRevealKey(session))}
           onError={() => {
             setError("The frozen preview could not load. You can still select from the live desktop.");
@@ -5878,9 +5917,6 @@ function CaptureOverlay() {
       ? hoveredWindowLayout
       : null;
   const displayCornerRadius = Math.max(0, session.display_corner_radius ?? 0);
-  const snapshotClipPath = mode === "region" && dimHole
-    ? captureDimClipPath(dimHole)
-    : undefined;
 
   return (
     <main
@@ -5915,7 +5951,6 @@ function CaptureOverlay() {
           src={session.snapshot_url}
           alt=""
           draggable={false}
-          style={snapshotClipPath ? { clipPath: snapshotClipPath } : undefined}
           onLoad={() => void revealOverlay()}
           onError={() => void revealOverlay()}
         />
@@ -6105,7 +6140,7 @@ export function Thumbnail() {
   const [stackHoverReady, setStackHoverReady] = useState(false);
   const [stackMinimizeRun, setStackMinimizeRun] = useState(false);
   const [stackHoverLatched, setStackHoverLatched] = useState(false);
-  const [expandFromTransforms, setExpandFromTransforms] = useState<Map<string, string>>(
+  const [expandFromPoses, setExpandFromPoses] = useState<Map<string, ThumbnailCardPose>>(
     () => new Map(),
   );
   const [exitingArtifactIds, setExitingArtifactIds] = useState<Set<string>>(
@@ -6141,7 +6176,6 @@ export function Thumbnail() {
   const collapsedStackPointerCleanup = useRef<(() => void) | null>(null);
   const skipCollapsedStackClick = useRef(false);
   const stackFanCollapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stackFanCollapsed = useRef(false);
   const stackMotionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stackHoverReadyFrames = useRef<{ first: number; second: number } | null>(null);
   const previousStackMotion = useRef<"expanded" | "collapsing" | "collapsed" | "expanding">(
@@ -7100,7 +7134,7 @@ export function Thumbnail() {
       stackHoverReadyFrames.current = frames;
     };
     if (prefersReducedMotion()) {
-      setExpandFromTransforms(new Map());
+      setExpandFromPoses(new Map());
       if (!nextCollapsed) pendingNewestReveal.current = true;
       setStackMotion(nextCollapsed ? "collapsed" : "expanded");
       if (nextCollapsed) armHoverReady();
@@ -7116,7 +7150,7 @@ export function Thumbnail() {
     }
     if (nextCollapsed) {
       cancelHoverReady();
-      setExpandFromTransforms(new Map());
+      setExpandFromPoses(new Map());
       setStackHoverLatched(false);
       setStackMinimizeRun(false);
       setStackMotion("collapsing");
@@ -7163,19 +7197,19 @@ export function Thumbnail() {
     pendingNewestReveal.current = true;
     void invoke("set_mini_previews_collapsed", { collapsed: false })
       .then(() => {
-        setExpandFromTransforms(captureThumbnailCardTransforms(stackRef.current));
+        setExpandFromPoses(captureThumbnailCardPoses(stackRef.current));
         cancelHoverReady();
         setStackMinimizeRun(false);
         setStackHoverLatched(false);
         setStackMotion("expanding");
         stackMotionTimer.current = setTimeout(() => {
           stackMotionTimer.current = null;
-          setExpandFromTransforms(new Map());
+          setExpandFromPoses(new Map());
           setStackMotion("expanded");
         }, STACK_MOTION_MS);
       })
       .catch(() => {
-        setExpandFromTransforms(new Map());
+        setExpandFromPoses(new Map());
         pendingNewestReveal.current = false;
         setStackMotion("collapsed");
         armHoverReady();
@@ -7339,8 +7373,21 @@ export function Thumbnail() {
         const stack = stackRef.current;
         if (!stack) return;
         setThumbnailStackDragging(stack, dragging);
-        if (dragging && stackFanCollapsed.current) {
-          setThumbnailStackDragSwayReady(stack, true);
+        setThumbnailStackPressing(stack, dragging);
+        // A click keeps the hover pose. Gather only once movement commits a
+        // drag, then allow velocity-driven lean after the gather finishes.
+        if (dragging) {
+          if (prefersReducedMotion()) {
+            setThumbnailStackDragSwayReady(stack, true);
+          } else {
+            const cardCount = stack.querySelectorAll(":scope > .thumbnail-card").length;
+            stackFanCollapseTimer.current = setTimeout(() => {
+              stackFanCollapseTimer.current = null;
+              if (!stackDrag.current?.isDragging) return;
+              stackDrag.current.resetSway();
+              setThumbnailStackDragSwayReady(stackRef.current, true);
+            }, thumbnailStackFanCollapseMs(cardCount));
+          }
         }
         window.dispatchEvent(new Event(THUMBNAIL_HIT_TEST_CHANGED_EVENT));
       },
@@ -7361,24 +7408,9 @@ export function Thumbnail() {
     const drag = collapsedStackDrag();
     if (!drag.pointerDown(event.nativeEvent)) return;
     skipCollapsedStackClick.current = true;
-    setThumbnailStackPressing(stackRef.current, true);
     if (stackFanCollapseTimer.current) {
       clearTimeout(stackFanCollapseTimer.current);
       stackFanCollapseTimer.current = null;
-    }
-    if (prefersReducedMotion()) {
-      stackFanCollapsed.current = true;
-    } else {
-      stackFanCollapsed.current = false;
-      const cardCount = stackRef.current?.querySelectorAll(":scope > .thumbnail-card").length
-        ?? 0;
-      stackFanCollapseTimer.current = setTimeout(() => {
-        stackFanCollapseTimer.current = null;
-        stackFanCollapsed.current = true;
-        if (!drag.isDragging) return;
-        drag.resetSway();
-        setThumbnailStackDragSwayReady(stackRef.current, true);
-      }, thumbnailStackFanCollapseMs(cardCount));
     }
     event.preventDefault();
     event.nativeEvent.preventDefault();
@@ -7409,7 +7441,6 @@ export function Thumbnail() {
         clearTimeout(stackFanCollapseTimer.current);
         stackFanCollapseTimer.current = null;
       }
-      stackFanCollapsed.current = false;
       setThumbnailStackPressing(stackRef.current, false);
       releaseThumbnailPointerCapture(hitTarget, pointerId);
       releaseThumbnailCapturedHover(hitTarget, {
@@ -7513,7 +7544,7 @@ export function Thumbnail() {
             editorActive={editorActiveArtifactIds.has(artifact.id)}
             stackCollapsed={compact}
             stackDepth={artifacts.length - artifacts.indexOf(artifact) - 1}
-            expandFromTransform={expandFromTransforms.get(artifact.id)}
+            expandFromPose={expandFromPoses.get(artifact.id)}
             stackDismissing={isStackClearTarget}
             clearDelayMs={clearDelayMs}
             previewDropReject={
@@ -7652,7 +7683,7 @@ export function ThumbnailCard({
   editorActive = false,
   stackCollapsed = false,
   stackDepth = 0,
-  expandFromTransform,
+  expandFromPose,
   stackDismissing = false,
   clearDelayMs = 0,
   previewDropReject = false,
@@ -7666,7 +7697,7 @@ export function ThumbnailCard({
   editorActive?: boolean;
   stackCollapsed?: boolean;
   stackDepth?: number;
-  expandFromTransform?: string;
+  expandFromPose?: ThumbnailCardPose;
   /** Parent Clear all: play Close without a per-card dismiss command. */
   stackDismissing?: boolean;
   clearDelayMs?: number;
@@ -8126,8 +8157,12 @@ export function ThumbnailCard({
         ...(stackCollapsed ? {
           "--thumbnail-stack-base-depth": stackDepth,
           "--thumbnail-stack-peek-jitter": `${thumbnailStackPeekJitterPx(stackDepth)}px`,
-          ...(expandFromTransform
-            ? { "--thumbnail-stack-expand-from": expandFromTransform }
+          ...(expandFromPose
+            ? {
+              "--thumbnail-stack-expand-from": expandFromPose.transform,
+              "--thumbnail-stack-expand-blur-from": expandFromPose.blur,
+              "--thumbnail-stack-expand-dim-from": expandFromPose.dim,
+            }
             : {}),
         } : {}),
         ...(clearDelayMs > 0
