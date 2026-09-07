@@ -6819,7 +6819,12 @@ fn set_mini_preview_stack_position(
         thumbnail_clamp_aligned_frame(x, virtual_y, frame_height, content_height, work, anchor);
     let front_y = thumbnail_collapsed_front_y(virtual_y, frame_height, anchor);
     let y = front_y - (frame_height - peek_padding - THUMBNAIL_CARD_HEIGHT);
-    let _ = window.set_position(tauri::LogicalPosition::new(x, y));
+    #[cfg(target_os = "macos")]
+    captures_macos_window::move_thumbnail_frame(&window, x, y).map_err(str::to_owned)?;
+    #[cfg(not(target_os = "macos"))]
+    window
+        .set_position(tauri::LogicalPosition::new(x, y))
+        .map_err(|error| format!("failed to move mini preview: {error}"))?;
     state
         .thumbnail_visibility
         .lock()
