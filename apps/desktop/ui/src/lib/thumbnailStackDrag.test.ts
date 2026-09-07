@@ -5,6 +5,7 @@ import {
   THUMBNAIL_HARNESS_DRAG_X_VAR,
   THUMBNAIL_HARNESS_DRAG_Y_VAR,
   THUMBNAIL_STACK_DRAG_THRESHOLD_PX,
+  THUMBNAIL_STACK_DRAG_SWAY_MAX_X_PX,
   THUMBNAIL_STACK_DRAG_SWAY_CLASS,
   THUMBNAIL_STACK_DRAGGING_CLASS,
   THUMBNAIL_STACK_PRESSING_CLASS,
@@ -469,7 +470,7 @@ describe("CollapsedThumbnailStackDrag", () => {
     const carried = sways.at(-1)!.x;
     expect(carried).toBeLessThan(0);
 
-    for (let frame = 1; frame <= 20; frame += 1) {
+    for (let frame = 1; frame <= 40; frame += 1) {
       now += 16;
       await drag.pointerMove({ pointerId: 1, screenX: 20, screenY: 0 });
     }
@@ -499,6 +500,24 @@ describe("CollapsedThumbnailStackDrag", () => {
     };
 
     expect(await swayAfterMove(16)).toBeGreaterThan(await swayAfterMove(48));
+  });
+
+  it("keeps the response restrained even when a pointer sample is abrupt", async () => {
+    let now = 0;
+    const sways: { x: number; y: number }[] = [];
+    const drag = new CollapsedThumbnailStackDrag({
+      getFrame: () => ({ x: 0, y: 0 }),
+      moveFrame: (x, y) => ({ x, y }),
+      reducedMotion: () => false,
+      now: () => now,
+      onSway: (sway) => sways.push({ ...sway }),
+    });
+
+    drag.pointerDown({ button: 0, pointerId: 1, screenX: 0, screenY: 0 });
+    now = 16;
+    await drag.pointerMove({ pointerId: 1, screenX: 80, screenY: 0 });
+
+    expect(Math.abs(sways.at(-1)!.x)).toBeLessThanOrEqual(THUMBNAIL_STACK_DRAG_SWAY_MAX_X_PX);
   });
 
   it("preserves newer pointer travel while an earlier native move is pending", async () => {
