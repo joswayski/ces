@@ -86,8 +86,7 @@ fn router() -> Router {
 }
 
 async fn connect(url: &str) -> Result<PgPool, sqlx::Error> {
-    // PlanetScale's pooler rejects search_path startup options. Runtime queries
-    // must qualify their tables with captures.; only migrations need the option.
+    // Keep the default public search path; do not send pooler startup overrides.
     let options = PgConnectOptions::from_str(url)?;
     PgPoolOptions::new()
         .max_connections(10)
@@ -97,23 +96,14 @@ async fn connect(url: &str) -> Result<PgPool, sqlx::Error> {
 }
 
 async fn connect_for_migration(url: &str) -> Result<PgPool, sqlx::Error> {
-    let options = PgConnectOptions::from_str(url)?.options([("search_path", "captures")]);
-    let pool = PgPoolOptions::new()
+    // Like Caper, migrations and runtime queries use the default public schema.
+    // SQLx serializes concurrent migrations; there is no custom schema to bootstrap.
+    let options = PgConnectOptions::from_str(url)?;
+    PgPoolOptions::new()
         .max_connections(1)
         .acquire_timeout(Duration::from_secs(5))
         .connect_with(options)
-        .await?;
-    let mut tx = pool.begin().await?;
-    // CREATE SCHEMA IF NOT EXISTS alone is not safe against concurrent startup.
-    // Serialize the bootstrap transaction before SQLx takes its migration lock.
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('captures.schema'))")
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("CREATE SCHEMA IF NOT EXISTS captures")
-        .execute(&mut *tx)
-        .await?;
-    tx.commit().await?;
-    Ok(pool)
+        .await
 }
 
 async fn migrate(url: &str) -> Result<(), &'static str> {
