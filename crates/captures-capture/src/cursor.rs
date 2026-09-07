@@ -150,8 +150,19 @@ fn map_pointer_to_buffer(
 #[allow(clippy::cast_possible_truncation)]
 fn draw_cursor(image: &mut RgbaImage, position: (i32, i32), source_height: u32) {
     let scale = (f64::from(source_height) / 1_080.0).round().clamp(1.0, 2.0) as i32;
-    draw_polygon(image, position, &CURSOR_OUTLINE, scale, [24, 24, 24]);
-    draw_polygon(image, position, &CURSOR_FILL, scale, [248, 248, 248]);
+    let (outline, fill) = cursor_colors(cfg!(target_os = "macos"));
+    draw_polygon(image, position, &CURSOR_OUTLINE, scale, outline);
+    draw_polygon(image, position, &CURSOR_FILL, scale, fill);
+}
+
+const fn cursor_colors(macos: bool) -> ([u8; 3], [u8; 3]) {
+    if macos {
+        // Match the standard macOS pointer. The inverse treatment disappears
+        // against light content when a region becomes undimmed.
+        ([248, 248, 248], [24, 24, 24])
+    } else {
+        ([24, 24, 24], [248, 248, 248])
+    }
 }
 
 fn draw_polygon(
@@ -206,8 +217,8 @@ fn put_pixel(image: &mut RgbaImage, x: i32, y: i32, color: [u8; 3]) {
 #[cfg(test)]
 mod tests {
     use super::{
-        map_pointer_to_buffer, overlay_pointer_cursor, overlay_pointer_cursor_in_crop,
-        overlay_pointer_cursor_on_window, screenshot_pointer_scale,
+        cursor_colors, map_pointer_to_buffer, overlay_pointer_cursor,
+        overlay_pointer_cursor_in_crop, overlay_pointer_cursor_on_window, screenshot_pointer_scale,
     };
     use crate::model::{DisplayDescriptor, WindowDescriptor};
 
@@ -263,6 +274,12 @@ mod tests {
         overlay_pointer_cursor(&mut image, &display, (10, 12), 1.0);
         assert!(image.pixels().any(|pixel| pixel.0 == [24, 24, 24, 255]));
         assert!(image.pixels().any(|pixel| pixel.0 == [248, 248, 248, 255]));
+    }
+
+    #[test]
+    fn macos_cursor_has_a_dark_fill_with_a_light_outline() {
+        assert_eq!(cursor_colors(true), ([248, 248, 248], [24, 24, 24]));
+        assert_eq!(cursor_colors(false), ([24, 24, 24], [248, 248, 248]));
     }
 
     #[test]
