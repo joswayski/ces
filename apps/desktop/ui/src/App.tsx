@@ -6172,7 +6172,7 @@ export function Thumbnail() {
   const stackRef = useRef<HTMLElement>(null);
   const stackDrag = useRef<CollapsedThumbnailStackDrag | null>(null);
   // The browser harness emulates the native collapsed frame's fixed origin.
-  const harnessCollapsedLayout = useRef(false);
+  const harnessCollapsedLayout = useRef({ fixed: false, padding: THUMBNAIL_STACK_CONTROL_GUTTER_PX });
   const collapsedStackPointerCleanup = useRef<(() => void) | null>(null);
   const skipCollapsedStackClick = useRef(false);
   const stackFanCollapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -6238,17 +6238,21 @@ export function Thumbnail() {
   useLayoutEffect(() => {
     if (isTauri()) return;
     const fixed = stackMotion === "collapsed" || stackMotion === "collapsing";
-    if (fixed === harnessCollapsedLayout.current) return;
-    harnessCollapsedLayout.current = fixed;
     const padding = thumbnailCollapsedPadding(artifacts.length);
+    const previous = harnessCollapsedLayout.current;
+    harnessCollapsedLayout.current = { fixed, padding };
+    if (fixed === previous.fixed && (!fixed || padding === previous.padding)) return;
     const fixedTop = window.innerHeight - padding - THUMBNAIL_CARD_HEIGHT_PX;
     const alignedTop = stackAnchorRef.current === "top"
       ? THUMBNAIL_STACK_CONTROL_GUTTER_PX
       : window.innerHeight - THUMBNAIL_STACK_CONTROL_GUTTER_PX - THUMBNAIL_CARD_HEIGHT_PX;
+    const previousTop = previous.fixed
+      ? window.innerHeight - previous.padding - THUMBNAIL_CARD_HEIGHT_PX
+      : alignedTop;
     const offset = readHarnessStackOffset();
     document.documentElement.style.setProperty(
       "--thumbnail-stack-drag-y",
-      `${offset.y + (fixed ? alignedTop - fixedTop : fixedTop - alignedTop)}px`,
+      `${offset.y + previousTop - (fixed ? fixedTop : alignedTop)}px`,
     );
   }, [stackMotion, artifacts.length]);
 
@@ -6271,7 +6275,7 @@ export function Thumbnail() {
     const viewport = { width: window.innerWidth, height: window.innerHeight };
     const home = harnessOffsetForPlacement(placement, viewport);
     const count = stackRef.current?.querySelectorAll(":scope > .thumbnail-card").length ?? 1;
-    const padding = harnessCollapsedLayout.current ? thumbnailCollapsedPadding(count) : undefined;
+    const padding = harnessCollapsedLayout.current.fixed ? thumbnailCollapsedPadding(count) : undefined;
     if (padding !== undefined) {
       home.y = padding - THUMBNAIL_STACK_CONTROL_GUTTER_PX;
       if (home.anchor === "top") {

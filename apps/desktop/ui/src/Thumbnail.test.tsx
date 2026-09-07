@@ -1523,8 +1523,21 @@ describe("Thumbnail", () => {
       onCaptureCompleted?.({ payload: secondArtifact });
     });
 
+    const offsetBeforeGrowth = Number.parseFloat(
+      document.documentElement.style.getPropertyValue("--thumbnail-stack-drag-y") || "0",
+    );
+    await act(async () => {
+      onCaptureCompleted?.({ payload: { ...secondArtifact, id: "capture-3" } });
+    });
+    const paddingDelta = thumbnailCollapsedPadding(3) - thumbnailCollapsedPadding(2);
+    expect(paddingDelta).toBeGreaterThan(0);
+    const offsetAfterGrowth = Number.parseFloat(
+      document.documentElement.style.getPropertyValue("--thumbnail-stack-drag-y"),
+    );
+    expect(offsetAfterGrowth - offsetBeforeGrowth).toBeCloseTo(paddingDelta);
+
     expect(stack).toHaveClass("thumbnail-stack-minimized");
-    const expand = screen.getByRole("button", { name: "Expand 2 previews" });
+    const expand = screen.getByRole("button", { name: "Expand 3 previews" });
     fireEvent.pointerDown(expand, {
       button: 0,
       pointerId: 1,
@@ -1543,9 +1556,9 @@ describe("Thumbnail", () => {
     expect(document.documentElement.style.getPropertyValue("--thumbnail-stack-drag-x")).toBe(
       "80px",
     );
-    expect(document.documentElement.style.getPropertyValue("--thumbnail-stack-drag-y")).toBe(
-      "-40px",
-    );
+    expect(Number.parseFloat(
+      document.documentElement.style.getPropertyValue("--thumbnail-stack-drag-y"),
+    )).toBeCloseTo(offsetAfterGrowth - 40);
     fireEvent.pointerUp(window, { pointerId: 1, bubbles: true });
     await waitFor(() => {
       expect(stack).not.toHaveClass("thumbnail-stack-dragging");
