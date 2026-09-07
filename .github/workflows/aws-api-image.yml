@@ -60,6 +60,17 @@ jobs:
             test "$(docker exec captures-db-test psql -U captures_test -Atc \
               "SELECT count(*) FROM pg_stat_activity WHERE application_name='migration'")" = 0
           done
+      - name: Export verified API image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker save --output "$RUNNER_TEMP/captures-api.tar" captures-api:test
+      - name: Upload verified API image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: captures-api-image
+          path: ${{ runner.temp }}/captures-api.tar
+          retention-days: 1
+          compression-level: 0
 
   publish-ecr:
     name: Publish immutable API image
@@ -74,7 +85,6 @@ jobs:
       ECR_REGISTRY: 395451633568.dkr.ecr.us-east-1.amazonaws.com
       ECR_REPOSITORY: production/captures
     steps:
-      - uses: actions/checkout@v4
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
@@ -96,22 +106,25 @@ jobs:
           else
             printf 'exists=false\n' >> "$GITHUB_OUTPUT"
           fi
+      - name: Download verified API image
+        if: steps.existing.outputs.exists != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: captures-api-image
+          path: ${{ runner.temp }}
+      - name: Load verified API image
+        if: steps.existing.outputs.exists != 'true'
+        run: docker load --input "$RUNNER_TEMP/captures-api.tar"
       - name: Log in to Amazon ECR
         if: steps.existing.outputs.exists != 'true'
         uses: aws-actions/amazon-ecr-login@v2.1.6
-      - if: steps.existing.outputs.exists != 'true'
-        uses: docker/setup-buildx-action@v3
-      - name: Build API image for publishing
+      - name: Publish verified immutable API image
         if: steps.existing.outputs.exists != 'true'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: apps/api/Dockerfile
-          platforms: linux/arm64
-          push: true
-          tags: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:api-${{ github.sha }}
-          cache-from: type=gha,scope=captures-api
-          cache-to: type=gha,scope=captures-api,mode=max
+        run: |
+          set -euo pipefail
+          image="${ECR_REGISTRY}/${ECR_REPOSITORY}:api-${GITHUB_SHA}"
+          docker tag captures-api:test "$image"
+          docker push "$image"
       - name: Publish tested immutable API image
         shell: bash
         run: |
