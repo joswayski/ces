@@ -11,10 +11,13 @@ export const THUMBNAIL_STACK_DRAG_SWAY_MAX_Y_PX = 2;
  * rear cards briefly pass their rest position before settling instead of
  * stopping like a rigid object.
  */
-export const THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_SPRING = 240;
-export const THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_DAMPING = 22;
-/** Converts cursor speed in CSS pixels per second into rear-card momentum. */
-export const THUMBNAIL_STACK_DRAG_SWAY_POINTER_SPEED_GAIN = 0.075;
+export const THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_SPRING = 500;
+export const THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_DAMPING = 32;
+/** Converts cursor speed in CSS pixels per second into the trailing-card pose. */
+export const THUMBNAIL_STACK_DRAG_SWAY_POINTER_SPEED_GAIN = 0.0012;
+/** The pile picks up movement quickly, then releases it gently when the pointer stops. */
+export const THUMBNAIL_STACK_DRAG_SWAY_DRIVE_IN_RATE = 55;
+export const THUMBNAIL_STACK_DRAG_SWAY_DRIVE_OUT_RATE = 10;
 
 /** First sample after a press has no previous timestamp; treat it as one frame. */
 const THUMBNAIL_STACK_DRAG_SWAY_DEFAULT_DT_MS = 16;
@@ -91,6 +94,7 @@ export type ThumbnailStackDragSwayMotion = {
 type ThumbnailStackDragSwayState = {
   position: ThumbnailStackPoint;
   velocity: ThumbnailStackPoint;
+  drive: ThumbnailStackPoint;
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -117,9 +121,9 @@ function swayDtMs(dtMs: number): number {
 }
 
 /**
- * Advance the live pile with a small, under-damped spring. Pointer travel is
- * normalized by elapsed time, so a fast flick stores more momentum than a
- * slow carry over the same distance.
+ * Advance the live pile with a filtered velocity target and an under-damped
+ * spring. The target picks up a carry quickly but eases away after it stops,
+ * preventing the first pointer sample from kicking the pile into a jump.
  */
 function tickThumbnailStackDragSwayState(
   sway: ThumbnailStackDragSwayState,
@@ -127,35 +131,57 @@ function tickThumbnailStackDragSwayState(
   options: { reducedMotion?: boolean } = {},
 ): ThumbnailStackDragSwayState {
   if (options.reducedMotion) {
-    return { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } };
+    return { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 }, drive: { x: 0, y: 0 } };
   }
   const dt = swayDtMs(motion.dtMs) / 1000;
   if (dt === 0) return sway;
-  const advance = (position: number, velocity: number, pointerStep: number, max: number) => {
+  const advance = (
+    position: number,
+    velocity: number,
+    drive: number,
+    pointerStep: number,
+    max: number,
+  ) => {
     const pointerSpeed = pointerStep / dt;
-    const nextVelocity = velocity * Math.exp(-THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_DAMPING * dt)
-      - pointerSpeed * THUMBNAIL_STACK_DRAG_SWAY_POINTER_SPEED_GAIN
-      - position * THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_SPRING * dt;
+    const desiredDrive = clamp(
+      -pointerSpeed * THUMBNAIL_STACK_DRAG_SWAY_POINTER_SPEED_GAIN,
+      -max,
+      max,
+    );
+    const driveRate = pointerStep === 0
+      ? THUMBNAIL_STACK_DRAG_SWAY_DRIVE_OUT_RATE
+      : THUMBNAIL_STACK_DRAG_SWAY_DRIVE_IN_RATE;
+    const nextDrive = drive + (desiredDrive - drive) * (1 - Math.exp(-driveRate * dt));
+    const nextVelocity = (
+      velocity * Math.exp(-THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_DAMPING * dt)
+      + (nextDrive - position) * THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_SPRING * dt
+    );
     const nextPosition = clamp(position + nextVelocity * dt, -max, max);
     // A clamp is a physical boundary, not stored momentum waiting to kick the
     // pile back into motion on the next frame.
     return nextPosition === -max || nextPosition === max
-      ? { position: nextPosition, velocity: 0 }
-      : { position: nextPosition, velocity: nextVelocity };
+      ? { position: nextPosition, velocity: 0, drive: nextDrive }
+      : { position: nextPosition, velocity: nextVelocity, drive: nextDrive };
   };
   const x = advance(
     sway.position.x,
     sway.velocity.x,
+    sway.drive.x,
     motion.dx,
     THUMBNAIL_STACK_DRAG_SWAY_MAX_X_PX,
   );
   const y = advance(
     sway.position.y,
     sway.velocity.y,
+    sway.drive.y,
     motion.dy,
     THUMBNAIL_STACK_DRAG_SWAY_MAX_Y_PX,
   );
-  return { position: { x: x.position, y: y.position }, velocity: { x: x.velocity, y: y.velocity } };
+  return {
+    position: { x: x.position, y: y.position },
+    velocity: { x: x.velocity, y: y.velocity },
+    drive: { x: x.drive, y: y.drive },
+  };
 }
 
 export function clampThumbnailStackFrame(
@@ -306,6 +332,7 @@ export class CollapsedThumbnailStackDrag {
   private releasing = false;
   private sway: ThumbnailStackPoint = { x: 0, y: 0 };
   private swayVelocity: ThumbnailStackPoint = { x: 0, y: 0 };
+  private swayDrive: ThumbnailStackPoint = { x: 0, y: 0 };
   private lastTickMs = 0;
   private swayRaf = 0;
   private pointerSampled = false;
@@ -327,6 +354,7 @@ export class CollapsedThumbnailStackDrag {
   resetSway() {
     this.sway = { x: 0, y: 0 };
     this.swayVelocity = { x: 0, y: 0 };
+    this.swayDrive = { x: 0, y: 0 };
     this.lastTickMs = 0;
     this.host.onSway?.(this.sway);
   }
@@ -429,6 +457,7 @@ export class CollapsedThumbnailStackDrag {
     this.dragging = false;
     this.sway = { x: 0, y: 0 };
     this.swayVelocity = { x: 0, y: 0 };
+    this.swayDrive = { x: 0, y: 0 };
     this.lastTickMs = 0;
     this.pointerSampled = false;
     this.stopSwayLoop();
@@ -466,6 +495,7 @@ export class CollapsedThumbnailStackDrag {
     this.stopSwayLoop();
     this.sway = { x: 0, y: 0 };
     this.swayVelocity = { x: 0, y: 0 };
+    this.swayDrive = { x: 0, y: 0 };
     this.lastTickMs = 0;
     this.pointerSampled = false;
   }
@@ -484,12 +514,13 @@ export class CollapsedThumbnailStackDrag {
       : now - this.lastTickMs;
     this.lastTickMs = now;
     const next = tickThumbnailStackDragSwayState(
-      { position: this.sway, velocity: this.swayVelocity },
+      { position: this.sway, velocity: this.swayVelocity, drive: this.swayDrive },
       { dx, dy, dtMs },
       { reducedMotion: this.host.reducedMotion() },
     );
     this.sway = next.position;
     this.swayVelocity = next.velocity;
+    this.swayDrive = next.drive;
   }
 
   private startSwayLoop() {
