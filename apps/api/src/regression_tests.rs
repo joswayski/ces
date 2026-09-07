@@ -27,11 +27,13 @@ async fn account_requests_fail_closed_even_with_credentials() {
 
 #[tokio::test]
 async fn health_remains_available() {
-    let response = crate::router()
-        .oneshot(Request::get("/health").body(Body::empty()).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
+    for path in ["/health", "/api/health"] {
+        let response = crate::router()
+            .oneshot(Request::get(path).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
+    }
 }
 
 #[tokio::test]
