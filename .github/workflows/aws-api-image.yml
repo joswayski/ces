@@ -1,0 +1,100 @@
+name: AWS API image
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  api-arm64:
+    name: linux/arm64 API image
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      ECR_REGISTRY: 395451633568.dkr.ecr.us-east-1.amazonaws.com
+      ECR_REPOSITORY: production/captures
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/arm64
+          load: true
+          tags: captures-api:test
+          cache-from: type=gha,scope=captures-api
+          cache-to: type=gha,scope=captures-api,mode=max
+      - name: Verify image, startup migrations, and protected API
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect captures-api:test --format '{{.Architecture}}')" = arm64
+          test "$(docker image inspect captures-api:test --format '{{.Os}}')" = linux
+          test "$(docker run --rm --entrypoint id captures-api:test -u)" != 0
+          trap 'docker rm -f captures-api-test captures-db-test >/dev/null 2>&1 || true' EXIT
+          docker run -d --name captures-db-test --network host \
+            -e POSTGRES_USER=captures_test -e POSTGRES_DB=captures_test \
+            -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17
+          for _ in {1..30}; do
+            if docker exec captures-db-test pg_isready -U captures_test; then break; fi
+            sleep 1
+          done
+          docker exec captures-db-test pg_isready -U captures_test
+          docker run -d --name captures-api-test --network host \
+            -e DATABASE_URL='postgres://captures_test@127.0.0.1:5432/captures_test?application_name=runtime' \
+            -e MIGRATION_DATABASE_URL='postgres://captures_test@127.0.0.1:5432/captures_test?application_name=migration' \
+            -e WORKOS_API_KEY=test -e WORKOS_CLIENT_ID=client_test \
+            -e WORKOS_WEBHOOK_SECRET=test captures-api:test
+          for attempt in first restart; do
+            if [[ "$attempt" == restart ]]; then docker restart captures-api-test; fi
+            ready=false
+            for _ in {1..30}; do
+              if curl -fsS http://127.0.0.1:3001/health >/dev/null; then ready=true; break; fi
+              sleep 1
+            done
+            if [[ "$ready" != true ]]; then docker logs captures-api-test; exit 1; fi
+            test "$(curl -fsS http://127.0.0.1:3001/health)" = '{"status":"ok"}'
+            test "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/api/account/me)" = 401
+            test "$(docker exec captures-db-test psql -U captures_test -Atc \
+              'SELECT count(*) FROM captures._sqlx_migrations WHERE success')" -gt 0
+            test "$(docker exec captures-db-test psql -U captures_test -Atc \
+              "SELECT count(*) FROM pg_stat_activity WHERE application_name='migration'")" = 0
+          done
+      - name: Configure AWS credentials
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: arn:aws:iam::395451633568:role/production-captures-ecr-publisher
+          role-session-name: captures-api-ecr-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: "395451633568"
+      - name: Log in to Amazon ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: aws-actions/amazon-ecr-login@v2.1.6
+      - name: Publish tested immutable API image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="api-${GITHUB_SHA}"
+          image="${ECR_REGISTRY}/${ECR_REPOSITORY}:${tag}"
+          # Listing failure is an error, not permission to overwrite an immutable tag.
+          existing="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+            --query "imageDetails[?imageTags && contains(imageTags, '${tag}')].imageDigest | [0]" \
+            --output json | jq -r '. // empty')"
+          if [[ ! "$existing" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            docker tag captures-api:test "$image"
+            docker push "$image"
+          fi
+          digest="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageTag=$tag" --query 'imageDetails[0].imageDigest' --output text)"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf '### Captures API image ready\n\n`%s@%s`\n\nPublishing does not deploy. Use the infrastructure account activation/deployment procedure.\n' \
+            "$image" "$digest" >> "$GITHUB_STEP_SUMMARY"

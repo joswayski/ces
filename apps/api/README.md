@@ -154,6 +154,25 @@ checks email identity isolation, stale events, disabled/deleted accounts and tra
 receipts, then drops that database. Never supply production credentials here.
 Other tests use local mock WorkOS/JWKS endpoints and generated RSA test keys.
 
+## Image publication
+
+The `AWS API image` workflow builds the non-root `linux/arm64` API image on pull
+requests and merges to `main`. A disposable PostgreSQL container verifies automatic
+migrations, restart, health, unauthenticated account rejection, and closure of the
+migration connection. No real database or WorkOS credentials are used in CI.
+
+After those checks pass on `main`, the workflow publishes that tested image to
+the existing `production/captures` ECR repository as **`api-<full Git SHA>`**.
+The website keeps its existing unprefixed SHA tags. Both use the existing Captures
+OIDC publisher role; there is no new ECR repository or publisher credential.
+Reruns preserve an existing immutable tag, and the workflow summary records the
+digest. Deployment must pin both the tag and digest, never `latest`.
+
+Publishing does not deploy or configure secrets. Follow the Captures account
+activation procedure in `joswayski/infrastructure` for the first rollout, then
+its API deployment workflow for subsequent pins. The API and website are separate
+images and must both include compatible account code before enabling login.
+
 ## Public API routing
 
 - **`captur.es` → `captures-web`**: website, browser AuthKit callback, session cookie,
