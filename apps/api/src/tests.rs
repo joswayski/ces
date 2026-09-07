@@ -28,7 +28,7 @@ use tokio::net::TcpListener;
 use tower::ServiceExt;
 
 use crate::{
-    AppState, MIGRATOR,
+    AppState,
     auth::{AuthError, JwtVerifier},
     config::Config,
     db,
@@ -537,8 +537,10 @@ async fn postgres_account_and_webhook_regressions() {
     let test_options = options.database(&name);
     let test_url = test_options.to_url_lossy().to_string();
     let result = async {
-        let pool = crate::connect_for_migration(&test_url).await?;
-        MIGRATOR.run(&pool).await?;
+        let (first, second) = tokio::join!(crate::migrate(&test_url), crate::migrate(&test_url));
+        first.expect("first concurrent startup migration");
+        second.expect("second concurrent startup migration");
+        let pool = crate::connect(&test_url).await?;
         let public_tables: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'",
         )

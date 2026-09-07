@@ -173,9 +173,17 @@ email OTP login, account status, and sign-out when configured. Google login,
 desktop login, uploads, and sharing are not implemented. No homepage account
 promotion is added until this service is configured and verified for deployment.
 
-The Node process has no database connection. The Rust service in
+The planned web Deployment name is `captures-web`; the npm package remains
+`@captures/web`. After infrastructure activation, `captur.es` serves the
+website/browser session, while `api.captur.es/api/*` routes directly to
+`captures-api`. Native clients call Rust with bearer tokens, not through a
+`/api/native` web gateway.
+
+The Node process receives neither `DATABASE_URL` nor `MIGRATION_DATABASE_URL`.
+The Rust service in
 [`../api`](../api/README.md) owns account provisioning, authorization, PostgreSQL
-migrations, and WorkOS user-lifecycle webhooks. After the browser callback, the
+migrations at API startup (direct migration connection, then pooled runtime
+connection), and WorkOS user-lifecycle webhooks. After the browser callback, the
 account loader sends the session's access token to Rust on the server. Rust
 returns only email and verification status. A WorkOS session alone does not grant
 local account access: disabled/deleted accounts still receive 403. The browser
@@ -208,7 +216,7 @@ In the **Captures** WorkOS environment (not another app's project):
 3. Set the sign-in URL to `/api/auth/sign-in` on the same origin and allow the
    `/account` URL as the post-logout return URL. For orb testing, register the
    actual portal URLs, not the server's internal loopback origin.
-4. Register `/api/webhooks/workos` on the public ingress routed to Rust, subscribe
+4. Register `https://api.captur.es/api/webhooks/workos` on the public Rust API, subscribe
    to `user.updated` and `user.deleted`, and supply the signing secret to Rust.
 5. Verify real OTP delivery, callback cookies, sign-out, account creation and
    webhook retries in staging before enabling production. The offline tests use
@@ -217,9 +225,10 @@ In the **Captures** WorkOS environment (not another app's project):
 Keep account HTML, `/api/auth/*`, `/api/account/*`, and TanStack server-function
 responses out of Cloudflare caches. Account responses use `no-store`; extend the
 Dynamic bypass rule to `/account` before enabling accounts. The existing Node
-image still serves the website; the new Rust image/deployment and ingress routing
-must be provisioned separately. No database migrations, shared roles, WorkOS
-dashboard settings, or production infrastructure are modified by this change.
+image still serves the website; the new Rust image/deployment, public API ingress,
+Cloudflare Tunnel route, DNS and TLS must be provisioned separately. No database
+migrations, shared roles, WorkOS dashboard settings, or production infrastructure
+are modified by this change.
 
 `npm run test:accounts --workspace @captures/web` runs the offline login/session
 integration checks after `npm run build:web` (also included in `npm run check`).

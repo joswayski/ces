@@ -39,17 +39,13 @@ async fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
-    if std::env::args().nth(1).as_deref() == Some("migrate") {
-        let url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-            eprintln!("DATABASE_URL is required");
+    if std::env::args().len() == 2 && std::env::args().nth(1).as_deref() == Some("migrate") {
+        let url = config::database_url("MIGRATION_DATABASE_URL", true).unwrap_or_else(|e| {
+            eprintln!("configuration error: {e}");
             std::process::exit(2)
         });
-        let pool = connect_for_migration(&url).await.unwrap_or_else(|_| {
-            eprintln!("database connection failed");
-            std::process::exit(2)
-        });
-        MIGRATOR.run(&pool).await.unwrap_or_else(|_| {
-            eprintln!("database migration failed");
+        migrate(&url).await.unwrap_or_else(|e| {
+            eprintln!("{e}");
             std::process::exit(2)
         });
         return;
@@ -62,6 +58,22 @@ async fn main() {
         eprintln!("configuration error: {e}");
         std::process::exit(2)
     });
+    {
+        let migration_url =
+            config::database_url("MIGRATION_DATABASE_URL", true).unwrap_or_else(|e| {
+                eprintln!("configuration error: {e}");
+                std::process::exit(2)
+            });
+        config::validate_database_pair(&config.database_url, &migration_url).unwrap_or_else(|e| {
+            eprintln!("configuration error: {e}");
+            std::process::exit(2)
+        });
+        // Startup cannot listen or open its runtime pool until migration succeeds.
+        migrate(&migration_url).await.unwrap_or_else(|e| {
+            eprintln!("{e}");
+            std::process::exit(2)
+        });
+    }
     let pool = connect(&config.database_url).await.unwrap_or_else(|_| {
         eprintln!("database connection failed");
         std::process::exit(2)
@@ -117,12 +129,36 @@ async fn connect(url: &str) -> Result<PgPool, sqlx::Error> {
 }
 
 async fn connect_for_migration(url: &str) -> Result<PgPool, sqlx::Error> {
-    let admin = PgPoolOptions::new().max_connections(1).connect(url).await?;
-    sqlx::query("CREATE SCHEMA IF NOT EXISTS captures")
-        .execute(&admin)
+    let options = PgConnectOptions::from_str(url)?.options([("search_path", "captures")]);
+    let pool = PgPoolOptions::new()
+        .max_connections(1)
+        .acquire_timeout(Duration::from_secs(5))
+        .connect_with(options)
         .await?;
-    admin.close().await;
-    connect(url).await
+    let mut tx = pool.begin().await?;
+    // CREATE SCHEMA IF NOT EXISTS alone is not safe against concurrent startup.
+    // Serialize the bootstrap transaction before SQLx takes its migration lock.
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtext('captures.schema'))")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("CREATE SCHEMA IF NOT EXISTS captures")
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(pool)
+}
+
+async fn migrate(url: &str) -> Result<(), &'static str> {
+    let pool = tokio::time::timeout(Duration::from_secs(300), connect_for_migration(url))
+        .await
+        .map_err(|_| "database migration connection timed out")?
+        .map_err(|_| "database migration connection failed")?;
+    let result = tokio::time::timeout(Duration::from_secs(300), MIGRATOR.run(&pool)).await;
+    // Close the DDL connection even on failure; runtime uses its own credentials.
+    pool.close().await;
+    result
+        .map_err(|_| "database migration timed out")?
+        .map_err(|_| "database migration failed")
 }
 
 async fn me(State(state): State<AppState>, headers: HeaderMap) -> Response {
