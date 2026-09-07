@@ -43,10 +43,10 @@ jobs:
             -e POSTGRES_USER=captures_test -e POSTGRES_DB=captures_test \
             -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17
           for _ in {1..30}; do
-            if docker exec captures-db-test pg_isready -U captures_test; then break; fi
+            if docker exec captures-db-test pg_isready -h 127.0.0.1 -U captures_test; then break; fi
             sleep 1
           done
-          docker exec captures-db-test pg_isready -U captures_test
+          docker exec captures-db-test pg_isready -h 127.0.0.1 -U captures_test
           docker run -d --name captures-api-test --network host \
             -e DATABASE_URL='postgres://captures_test@127.0.0.1:5432/captures_test?application_name=runtime' \
             -e MIGRATION_DATABASE_URL='postgres://captures_test@127.0.0.1:5432/captures_test?application_name=migration' \
