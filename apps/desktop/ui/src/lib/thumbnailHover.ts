@@ -427,6 +427,7 @@ export function releaseThumbnailCapturedHover(
 ): boolean {
   if (containsPoint(element, pointer.x, pointer.y)) {
     armThumbnailCollapsedHover(element);
+    element.setAttribute(THUMBNAIL_NATIVE_POINTER_HOVER_ATTRIBUTE, "true");
     return false;
   }
   element.removeAttribute(THUMBNAIL_NATIVE_POINTER_HOVER_ATTRIBUTE);

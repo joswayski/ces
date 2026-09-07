@@ -153,7 +153,7 @@ describe("thumbnail stack layout", () => {
       /\.thumbnail-stack-compact:not\(\.thumbnail-stack-expanding\) > \.thumbnail-card\s*\{[^}]*bottom:\s*var\(--thumbnail-collapsed-padding, 52px\)/,
     );
     expect(thumbnailStyles).toMatch(
-      /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-gravity, 1\)/,
+      /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-expand-sign, 1\)/,
     );
     expect(compactCard?.[1]).toMatch(/--thumbnail-stack-hover-transform/);
     expect(compactCard?.[1]).toMatch(/rotateZ\(0deg\)/);
@@ -165,6 +165,9 @@ describe("thumbnail stack layout", () => {
     expect(pressing?.[1]).toMatch(/transition:/);
     expect(pressing?.[1]).toMatch(
       /transform\s+var\(--stack-fan-dur\) calc\(var\(--thumbnail-stack-pile-depth, 0\) \* var\(--stack-fan-stagger\)\)/,
+    );
+    expect(pressing?.[1]).toMatch(
+      /transform:\s*var\(--thumbnail-stack-hover-transform\)/,
     );
     expect(pressing?.[1]).toMatch(/theme-accent-rgb/);
     expect(minimizingCard?.[1]).toMatch(/var\(--thumbnail-stack-expanded-transform\)/);
@@ -311,7 +314,7 @@ describe("thumbnail stack layout", () => {
     applyThumbnailStackGravity(stack, -0.42);
     expect(stack.style.getPropertyValue(THUMBNAIL_STACK_GRAVITY_VAR)).toBe("-0.42");
     expect(thumbnailStyles).toMatch(
-      /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-gravity, 1\)/,
+      /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-expand-sign, 1\)/,
     );
     expect(thumbnailStyles).not.toMatch(/--thumbnail-stack-skew-y/);
   });
@@ -396,6 +399,12 @@ describe("thumbnail stack layout", () => {
     expect(dragging?.[1]).toMatch(/--thumbnail-stack-pile-depth/);
     expect(dragging?.[1]).toMatch(/\* 0\.7/);
     expect(dragging?.[1]).toMatch(/\* 0\.2/);
+    expect(dragging?.[1]).toMatch(
+      /var\(--thumbnail-stack-pile-depth, 0\) \* -16px/,
+    );
+    expect(dragging?.[1]).not.toMatch(
+      /var\(--thumbnail-stack-pile-depth, 0\) \* -13px/,
+    );
     expect(dragging?.[1]).not.toMatch(/\(var\(--thumbnail-stack-pile-depth, 0\) \+ 1\)/);
     expect(dragging?.[1]).not.toMatch(/--thumbnail-stack-skew-/);
     expect(dragging?.[1]).toMatch(/rotateZ\(/);
@@ -734,7 +743,7 @@ describe("thumbnail stack layout", () => {
     expect(envelope(6)).toBeLessThan(envelope(2));
     expect(Math.abs(thumbnailStackPeekJitterPx(6))).toBeLessThanOrEqual(envelope(6) + 1e-12);
     expect(thumbnailStyles).toMatch(
-      /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-gravity, 1\)\s*\+\s*var\(--thumbnail-stack-peek-jitter, 0px\)/,
+      /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-expand-sign, 1\)\s*\+\s*var\(--thumbnail-stack-peek-jitter, 0px\)/,
     );
   });
 
