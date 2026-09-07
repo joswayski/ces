@@ -3,18 +3,18 @@ import { THUMBNAIL_CARD_HEIGHT_PX, THUMBNAIL_STACK_CONTROL_GUTTER_PX } from "./t
 /** Movement before a collapsed-pile press becomes a window drag instead of expand. */
 export const THUMBNAIL_STACK_DRAG_THRESHOLD_PX = 8;
 
-export const THUMBNAIL_STACK_DRAG_SWAY_MAX_X_PX = 4;
-export const THUMBNAIL_STACK_DRAG_SWAY_MAX_Y_PX = 2.5;
+export const THUMBNAIL_STACK_DRAG_SWAY_MAX_X_PX = 3;
+export const THUMBNAIL_STACK_DRAG_SWAY_MAX_Y_PX = 2;
 
 /**
  * The carried pile is deliberately under-damped: when the pointer pauses, the
  * rear cards briefly pass their rest position before settling instead of
  * stopping like a rigid object.
  */
-export const THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_SPRING = 260;
-export const THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_DAMPING = 19;
+export const THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_SPRING = 240;
+export const THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_DAMPING = 22;
 /** Converts cursor speed in CSS pixels per second into rear-card momentum. */
-export const THUMBNAIL_STACK_DRAG_SWAY_POINTER_SPEED_GAIN = 0.18;
+export const THUMBNAIL_STACK_DRAG_SWAY_POINTER_SPEED_GAIN = 0.075;
 
 /** First sample after a press has no previous timestamp; treat it as one frame. */
 const THUMBNAIL_STACK_DRAG_SWAY_DEFAULT_DT_MS = 16;
@@ -133,11 +133,9 @@ function tickThumbnailStackDragSwayState(
   if (dt === 0) return sway;
   const advance = (position: number, velocity: number, pointerStep: number, max: number) => {
     const pointerSpeed = pointerStep / dt;
-    const nextVelocity = (
-      velocity
+    const nextVelocity = velocity * Math.exp(-THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_DAMPING * dt)
       - pointerSpeed * THUMBNAIL_STACK_DRAG_SWAY_POINTER_SPEED_GAIN
-      - position * THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_SPRING * dt
-    ) * Math.exp(-THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_DAMPING * dt);
+      - position * THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_SPRING * dt;
     const nextPosition = clamp(position + nextVelocity * dt, -max, max);
     // A clamp is a physical boundary, not stored momentum waiting to kick the
     // pile back into motion on the next frame.
