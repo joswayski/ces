@@ -1001,14 +1001,28 @@ describe("Thumbnail", () => {
   });
 
   it("minimizes previews into a layered stack and expands them again", async () => {
+    const stacked = [
+      artifact,
+      { ...artifact, id: "capture-2" },
+    ];
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_artifacts") return stacked;
+      if (command === "get_clipboard_state") {
+        return { revision: 0, artifact_id: stacked.at(-1)?.id };
+      }
+      if (command === "get_thumbnail_pointer_position") {
+        return new Promise(() => undefined);
+      }
+      return undefined;
+    });
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     const minimize = screen.getByRole("button", { name: "Minimize previews" });
     expect(minimize).toHaveTextContent("Show less");
     expect(minimize).not.toHaveAttribute("data-tooltip");
     expect(screen.queryByRole("button", { name: "Clear previews" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Clear all previews" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Clear all previews" })).toBeEnabled();
 
     vi.useFakeTimers();
     fireEvent.click(minimize);
@@ -1039,7 +1053,7 @@ describe("Thumbnail", () => {
     });
     expect(stack).toHaveClass("thumbnail-stack-hover-ready");
     expect(screen.queryByRole("button", { name: "Minimize previews" })).toBeNull();
-    const expand = screen.getByRole("button", { name: "Expand preview" });
+    const expand = screen.getByRole("button", { name: "Expand 2 previews" });
     expect(expand).toHaveClass("thumbnail-collapsed-hit-target");
     expect(vi.mocked(invoke)).toHaveBeenCalledWith(
       "set_mini_previews_collapsed",
@@ -1067,6 +1081,25 @@ describe("Thumbnail", () => {
     expect(stack.contains(
       screen.getByRole("button", { name: "Minimize previews" }).closest(".thumbnail-stack-toolbar"),
     )).toBe(false);
+  });
+
+  it("does not show a collapse control for a single preview", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_artifacts") return [artifact];
+      if (command === "get_clipboard_state") {
+        return { revision: 0, artifact_id: artifact.id };
+      }
+      if (command === "get_thumbnail_pointer_position") {
+        return new Promise(() => undefined);
+      }
+      return undefined;
+    });
+    render(<Thumbnail />);
+
+    await screen.findByRole("article");
+
+    expect(screen.queryByRole("button", { name: "Minimize previews" })).toBeNull();
+    expect(document.querySelector(".thumbnail-stack-toolbar")).toBeNull();
   });
 
   it("reveals the newest capture and keeps Show less at the window after expanding", async () => {
