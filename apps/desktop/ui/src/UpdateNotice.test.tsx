@@ -83,8 +83,11 @@ describe("UpdateNotice", () => {
     expect(screen.queryByText(/Captures Preview/u)).not.toBeInTheDocument();
     expect(screen.queryByText(/Signed Preview/u)).not.toBeInTheDocument();
     expect(screen.queryByText("2026.07.19.1")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Update now" })).toHaveFocus();
-    fireEvent.click(screen.getByRole("button", { name: "Update now" }));
+    const updateNow = screen.getByRole("button", { name: "Update now" });
+    expect(updateNow).not.toHaveFocus();
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(invoke).not.toHaveBeenCalledWith("install_update");
+    fireEvent.click(updateNow);
 
     await waitFor(() => expect(invoke).toHaveBeenCalledWith("install_update"));
   });
@@ -172,7 +175,7 @@ describe("UpdateNotice", () => {
       "58",
     );
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "Updating Captures" })).toHaveFocus();
+    expect(screen.getByRole("dialog", { name: "Updating Captures" })).not.toHaveFocus();
   });
 
   it("keeps the available state useful when release notes are missing", async () => {
@@ -348,12 +351,12 @@ describe("UpdateNotice", () => {
     window.history.replaceState({}, "", "/");
   });
 
-  it("focuses Update now instead of Later when an update is available", async () => {
+  it("does not focus an action when an update is available", async () => {
     vi.mocked(invoke).mockResolvedValue(available);
 
     render(<UpdateNotice />);
 
-    expect(await screen.findByRole("button", { name: "Update now" })).toHaveFocus();
+    expect(await screen.findByRole("button", { name: "Update now" })).not.toHaveFocus();
     expect(screen.queryByRole("button", { name: "download from captur.es" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Later" })).not.toHaveFocus();
   });
