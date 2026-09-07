@@ -877,7 +877,6 @@ fn show_update_notice(app: &AppHandle) {
                 should_hide_update_notice_for_capture(&app),
             );
             let _ = crate::apply_tray_notice_position(&window, placement);
-            crate::focus_single_window(&window);
             return;
         }
         if let Err(error) = create_update_notice(&app, placement) {
@@ -928,6 +927,9 @@ fn create_update_notice(
     .theme(theme)
     .background_color(background)
     .accept_first_mouse(true)
+    // An available update is informational. Keep the app the user is typing
+    // in active, while still allowing a first click on this notice to work.
+    .focusable(false)
     .focused(false)
     .visible(false)
     .on_page_load(crate::document_window_page_load_handler(
@@ -939,7 +941,6 @@ fn create_update_notice(
     let _ =
         crate::set_window_content_protected(&window, should_hide_update_notice_for_capture(app));
     crate::apply_tray_notice_position(&window, placement)?;
-    crate::focus_single_window(&window);
     Ok(())
 }
 

@@ -711,7 +711,6 @@ export function UpdateNotice() {
   const [showChangelog, setShowChangelog] = useState(true);
   const [actionError, setActionError] = useState("");
   const [installing, setInstalling] = useState(false);
-  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -803,14 +802,6 @@ export function UpdateNotice() {
             : "This should only take a moment.";
   const dismissBlocked = Boolean(downloading || restarting || installing);
 
-  useLayoutEffect(() => {
-    const root = dialogRef.current;
-    if (!root) return;
-    const primary = root.querySelector<HTMLButtonElement>("button.primary");
-    const dismiss = root.querySelector<HTMLButtonElement>("button.update-dismiss");
-    (primary ?? dismiss ?? root).focus({ preventScroll: true });
-  }, [visualState, available, error, downloading, restarting, notesVisible]);
-
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -825,7 +816,6 @@ export function UpdateNotice() {
   return (
     <TrayNoticeShell>
       <div
-        ref={dialogRef}
         className={[
           "update-notice",
           `update-notice-${visualState}`,
