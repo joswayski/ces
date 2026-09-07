@@ -177,6 +177,9 @@ describe("thumbnail stack layout", () => {
     expect(minimizeRun?.[1]).toMatch(/transform:\s*var\(--thumbnail-stack-rest-transform\)/);
     expect(minimizeRun?.[1]).toMatch(/transform 0\.52s/);
     expect(minimizeRun?.[1]).toMatch(/top 0\.52s/);
+    expect(thumbnailStyles).toMatch(
+      /\.thumbnail-stack-expanding > \.thumbnail-card\s*\{[^}]*bottom 0\.52s var\(--ease-standard\)/,
+    );
     expect(thumbnailStyles).toMatch(/thumbnail-card-expand 0\.52s/);
     expect(thumbnailStyles).toMatch(/thumbnail-card-expand-dim 0\.52s/);
     expect(hoverFan).not.toBeNull();

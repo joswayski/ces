@@ -2275,6 +2275,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
 .thumbnail-stack-minimizing > .thumbnail-card,
 .thumbnail-stack-expanding > .thumbnail-card {
   transition:
+    bottom 0.52s var(--ease-standard),
     opacity var(--dur-4) var(--ease-out),
     box-shadow var(--dur-4) var(--ease-out);
   will-change: transform, opacity;
