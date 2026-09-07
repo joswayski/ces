@@ -568,6 +568,15 @@ describe("thumbnail stack layout", () => {
     );
   });
 
+  it("keeps rear mini-preview cards at their normal brightness while dragging", () => {
+    const dragSway = thumbnailStyles.match(
+      /\.thumbnail-stack-minimized\.thumbnail-stack-dragging\.thumbnail-stack-drag-sway > \.thumbnail-card\s*\{([\s\S]*?)\n\}/,
+    );
+
+    expect(dragSway?.[1]).not.toMatch(/filter\s*:/);
+    expect(dragSway?.[1]).not.toMatch(/brightness\s*\(/);
+  });
+
   it("fades the Show less control in linearly, delays hiding it on last delete, and clears it with the Close streak", () => {
     const enter = thumbnailStyles.split("@keyframes thumbnail-stack-toolbar-in")[1]
       ?.split("@keyframes")[0];
