@@ -1469,6 +1469,14 @@
   font: inherit;
 }
 
+.history-image-open {
+  width: 100%;
+  height: 100%;
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
 .history-image-open:not(:disabled) {
   cursor: pointer;
   transition: background var(--dur-2) var(--ease-standard);
@@ -1484,7 +1492,7 @@
   z-index: 1;
 }
 
-.history-image-wrap img {
+.history-image-open img {
   display: block;
   width: 100%;
   height: 100%;
@@ -1494,6 +1502,46 @@
 .history-image-missing img {
   opacity: 0.3;
   filter: grayscale(1);
+}
+
+.history-image-wrap > .history-delete {
+  position: absolute;
+  z-index: 2;
+  top: var(--s-3);
+  right: var(--s-3);
+  display: grid;
+  width: var(--h-md);
+  height: var(--h-md);
+  min-height: 0;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-raised) 88%, transparent);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(12px);
+}
+
+.history-image-wrap > .history-delete:hover:not(:disabled) {
+  border-color: transparent;
+  color: #fff;
+  background: var(--theme-signal);
+}
+
+.history-image-wrap > .history-delete.history-delete-confirm {
+  color: #fff;
+  background: var(--theme-signal-strong);
+}
+
+.history-image-wrap > .history-delete svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .history-missing-label {
@@ -1541,15 +1589,6 @@
   margin-top: var(--s-3);
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--s-3);
-}
-
-.history-screenshot-actions .history-delete,
-.history-recording-actions .history-delete {
-  grid-column: 1 / -1;
-}
-
-.history-missing-actions {
-  grid-template-columns: 1fr;
 }
 
 .history-actions button {

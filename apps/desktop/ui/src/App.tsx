@@ -1583,25 +1583,44 @@ export function HistoryCard({
 
   return (
     <article className="history-card">
-      <button
-        type="button"
-        className={[
-          "history-image-wrap",
-          entry.kind !== "screenshot" && entry.missing ? "history-image-missing" : "",
-          previewDisabled ? "" : "history-image-open",
-        ].filter(Boolean).join(" ")}
-        disabled={previewDisabled}
-        aria-label={previewLabel}
-        onClick={() => void openCapture()}
-      >
-        <img
-          src={entry.kind === "screenshot" ? entry.preview_url : entry.poster_url}
-          alt={entry.kind === "screenshot" ? "Screenshot from capture history" : `${entry.kind === "gif" ? "GIF" : "Video"} recording poster`}
-          loading="lazy"
-          draggable={false}
-        />
+      <div className={[
+        "history-image-wrap",
+        entry.kind !== "screenshot" && entry.missing ? "history-image-missing" : "",
+      ].filter(Boolean).join(" ")}>
+        <button
+          type="button"
+          className="history-image-open"
+          disabled={previewDisabled}
+          aria-label={previewLabel}
+          onClick={() => void openCapture()}
+        >
+          <img
+            src={entry.kind === "screenshot" ? entry.preview_url : entry.poster_url}
+            alt={entry.kind === "screenshot" ? "Screenshot from capture history" : `${entry.kind === "gif" ? "GIF" : "Video"} recording poster`}
+            loading="lazy"
+            draggable={false}
+          />
+        </button>
         {entry.kind !== "screenshot" && entry.missing && <span className="history-missing-label">File missing</span>}
-      </button>
+        <button
+          type="button"
+          className={confirmingDelete ? "history-delete history-delete-confirm" : "history-delete"}
+          aria-label={entry.kind !== "screenshot" && entry.missing
+            ? "Remove missing entry"
+            : confirmingDelete
+              ? "Confirm permanent deletion"
+              : "Delete from History"}
+          title={entry.kind !== "screenshot" && entry.missing
+            ? "Remove missing entry"
+            : confirmingDelete
+              ? "Delete forever"
+              : "Delete from History"}
+          disabled={busy !== null}
+          onClick={() => void deleteFromHistory()}
+        >
+          <TrashIcon />
+        </button>
+      </div>
       <div className="history-card-body">
         <time dateTime={entry.created_at}>{formatHistoryDate(entry.created_at)}</time>
         <p>
@@ -1612,7 +1631,6 @@ export function HistoryCard({
         <div className={[
           "history-actions",
           entry.kind === "screenshot" ? "history-screenshot-actions" : "history-recording-actions",
-          entry.kind !== "screenshot" && entry.missing ? "history-missing-actions" : "",
         ].filter(Boolean).join(" ")}>
           {entry.kind === "screenshot" ? (
             <>
@@ -1666,24 +1684,6 @@ export function HistoryCard({
               )}
             </>
           ) : null}
-          <button
-            type="button"
-            className={confirmingDelete ? "history-delete history-delete-confirm" : "history-delete"}
-            aria-label={entry.kind !== "screenshot" && entry.missing
-              ? "Remove missing entry"
-              : confirmingDelete
-              ? "Confirm permanent deletion"
-              : "Delete from History"}
-            disabled={busy !== null}
-            onClick={() => void deleteFromHistory()}
-          >
-            <TrashIcon />
-            {entry.kind !== "screenshot" && entry.missing
-              ? busy === "deleting" ? "Removing…" : "Remove entry"
-              : confirmingDelete
-                ? "Delete forever"
-                : "Delete"}
-          </button>
         </div>
         {error && <p className="history-card-error" role="alert">{error}</p>}
       </div>

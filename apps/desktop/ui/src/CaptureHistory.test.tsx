@@ -117,6 +117,8 @@ describe("CaptureHistory", () => {
     const deleteButton = screen.getByRole("button", { name: "Delete from History" });
     expect(deleteButton).toHaveClass("history-delete");
     expect(deleteButton).not.toHaveClass("history-delete-confirm");
+    expect(deleteButton.parentElement).toHaveClass("history-image-wrap");
+    expect(document.querySelector(".history-actions .history-delete")).toBeNull();
 
     fireEvent.click(deleteButton);
     expect(screen.getByRole("button", { name: "Confirm permanent deletion" })).toBeInTheDocument();
@@ -255,7 +257,7 @@ describe("CaptureHistory", () => {
     expect(await screen.findByText("File missing")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Show in Folder" })).not.toBeInTheDocument();
-    expect(container.querySelector(".history-missing-actions")?.childElementCount).toBe(1);
+    expect(container.querySelector(".history-actions .history-delete")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Remove missing entry" }));
     await waitFor(() => {
