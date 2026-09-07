@@ -6231,8 +6231,8 @@ export function Thumbnail() {
   useLayoutEffect(() => {
     const dragging = stackDrag.current?.isDragging ?? false;
     setThumbnailStackDragging(stackRef.current, dragging);
-    setThumbnailStackPressing(stackRef.current, collapsedStackPointerCleanup.current !== null);
-    setThumbnailStackDragSwayReady(stackRef.current, dragging && stackFanCollapsed.current);
+    setThumbnailStackPressing(stackRef.current, dragging && collapsedStackPointerCleanup.current !== null);
+    setThumbnailStackDragSwayReady(stackRef.current, dragging && stackFanCollapseTimer.current === null);
   });
 
   useLayoutEffect(() => {
