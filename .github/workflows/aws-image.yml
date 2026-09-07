@@ -167,8 +167,8 @@ jobs:
             {
               username: "Production deploys",
               embeds: [{
-                title: "Captures image is ready",
-                description: "Deploy Captures triggers this exact image. Open GitHub is the fallback.",
+                title: "Captures web image is ready",
+                description: "Deploy Captures web triggers this exact web image. Open GitHub is the fallback.",
                 color: 5763711,
                 fields: ([
                   {name: "Git SHA", value: ("`" + $git_sha + "`"), inline: false},
@@ -184,7 +184,7 @@ jobs:
                   {
                     type: 2,
                     style: 3,
-                    label: "Deploy Captures",
+                    label: "Deploy Captures web",
                     custom_id: ("production-deploy:v1:captures:" + $git_sha)
                   },
                   {type: 2, style: 5, label: "Open GitHub", url: $deploy_url}

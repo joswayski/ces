@@ -173,6 +173,15 @@ OIDC publisher role; there is no new ECR repository or publisher credential.
 Reruns preserve an existing immutable tag, and the workflow summary records the
 digest. Deployment must pin both the tag and digest, never `latest`.
 
+Successful API publication sends **Captures API image is ready** to the existing
+`DEPLOY_NOTIFICATION_WEBHOOK_URL`, with a **Deploy Captures API** button and the
+exact SHA/digest. Web notifications separately say **Captures web**. The API button
+uses Godis's `captures-api` route to `deploy-captures-api.yml`; deploy a Godis version
+supporting that route before using it. **Open GitHub** links to the API workflow as
+a fallback. No new webhook secret is needed. Missing webhook configuration skips
+the notification; a delivery error fails the notification step and can be retried
+without overwriting the immutable image.
+
 Publishing does not deploy or configure secrets. Follow the Captures account
 activation procedure in `joswayski/infrastructure` for the first rollout, then
 its API deployment workflow for subsequent pins. The API and website are separate

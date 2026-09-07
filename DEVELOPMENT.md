@@ -18,6 +18,8 @@ tests. It does not participate in local desktop capture. See
 migrations and tests, and [`apps/web/README.md`](apps/web/README.md#optional-accounts)
 for WorkOS browser setup. `npm run check` includes an offline AuthKit callback,
 session and CSRF integration test against the built website; it sends no emails.
+The offline deployment-notification tests also require Bash and `jq` on PATH
+(including on Windows); they intercept HTTP calls and send no Discord messages.
 
 ## Setup
 
