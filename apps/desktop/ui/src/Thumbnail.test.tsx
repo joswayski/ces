@@ -82,6 +82,18 @@ describe("Thumbnail", () => {
     expect(card).toHaveAttribute("data-thumbnail-native-active", "true");
   });
 
+  it("positions a collapsed pile within its retained native frame", async () => {
+    render(<Thumbnail />);
+    const card = await screen.findByRole("article");
+    const stack = card.closest(".thumbnail-stack") as HTMLElement;
+
+    window.dispatchEvent(new CustomEvent("captures-thumbnail-collapsed-layout", {
+      detail: { contentY: 52 },
+    }));
+
+    expect(stack.style.getPropertyValue("--thumbnail-collapsed-content-y")).toBe("52px");
+  });
+
   it("reasserts the interactive cursor across button and focus handoffs", async () => {
     let pointerReady = false;
     const editButtonRef = { current: null as HTMLElement | null };

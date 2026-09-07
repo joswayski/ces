@@ -19,6 +19,15 @@ html[data-preview-harness-view="thumbnail"] #root {
   );
 }
 
+/* The native mini-preview window can retain a tall WebView after collapse.
+ * Keep transformed pile paint from turning that transparent document into a
+ * scrollable overlay over the app beneath it. */
+html:has(.thumbnail-stack),
+body:has(.thumbnail-stack),
+#root:has(.thumbnail-stack) {
+  overflow: hidden;
+}
+
 /*
  * Bottom-anchor the stack with content height rather than a full-window flex
  * column: a full-height column plus margin-top:auto reflows the top card when
@@ -2227,11 +2236,18 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
     top 0.52s var(--ease-standard);
 }
 
-/* One physical origin throughout collapsed mode. Gravity can reverse without
- * exchanging the ends of a retained native window. Symmetric native padding
- * leaves room for the rear cards on either side of the front card. */
+/* The native frame can stay tall after collapse. Rust keeps that frame inside
+ * the work area and updates this local card position as the pile is dragged,
+ * so AppKit never has to accept an off-screen window origin. */
 .thumbnail-stack-compact:not(.thumbnail-stack-expanding) {
   perspective-origin: 50% calc(100% - var(--thumbnail-collapsed-padding, 52px) - 80px);
+  translate: 0 calc(
+    var(
+      --thumbnail-collapsed-content-y,
+      calc(100% - var(--thumbnail-collapsed-padding, 52px) - 160px)
+    )
+      - (100% - var(--thumbnail-collapsed-padding, 52px) - 160px)
+  );
 }
 
 .thumbnail-stack-compact:not(.thumbnail-stack-expanding) > .thumbnail-card {

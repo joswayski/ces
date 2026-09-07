@@ -137,7 +137,6 @@ import {
 import {
   CollapsedThumbnailStackDrag,
   applyThumbnailStackDragSway,
-  clampThumbnailStackFrame,
   cssUrl,
   preventThumbnailHtml5Drag,
   readHarnessStackOffset,
@@ -169,7 +168,6 @@ import {
   thumbnailStackGravityFromWorkArea,
   thumbnailStackSideFromBias,
   thumbnailStackSideFromPlacement,
-  thumbnailStackVisualPileBottom,
   thumbnailStackNeedsScrollport,
   thumbnailStackOverflow,
   restoreThumbnailStackShiftClass,
@@ -280,6 +278,8 @@ const STACK_CLEAR_EXIT_ACTION = "stack_clear";
 /** How long the mini-preview shows “Saved” before flipping to “Show in Folder”. */
 const THUMBNAIL_SAVED_FEEDBACK_MS = 1_000;
 const THUMBNAIL_HIT_TEST_CHANGED_EVENT = "captures-thumbnail-hit-test-changed";
+const THUMBNAIL_COLLAPSED_LAYOUT_EVENT = "captures-thumbnail-collapsed-layout";
+const THUMBNAIL_COLLAPSED_CONTENT_Y_VAR = "--thumbnail-collapsed-content-y";
 const RECORDING_SELECTOR_REVEAL_FALLBACK_MS = 200;
 /** Hidden overlay paints first; reveal after decode or this deadline. Tests use a longer deadline so jsdom cannot race the wake assertion. */
 const CAPTURE_OVERLAY_REVEAL_FALLBACK_MS = import.meta.env.MODE === "test" ? 10_000 : 400;
@@ -6161,6 +6161,7 @@ export function Thumbnail() {
   ));
   const stackRef = useRef<HTMLElement>(null);
   const stackDrag = useRef<CollapsedThumbnailStackDrag | null>(null);
+  const collapsedContentYRef = useRef<number | null>(null);
   // The browser harness emulates the native collapsed frame's fixed origin.
   const harnessCollapsedLayout = useRef({ fixed: false, padding: THUMBNAIL_STACK_CONTROL_GUTTER_PX });
   const collapsedStackPointerCleanup = useRef<(() => void) | null>(null);
@@ -6215,6 +6216,23 @@ export function Thumbnail() {
     stackRef.current?.classList.toggle("thumbnail-stack-anchor-top", nextAnchor === "top");
     pendingNewestReveal.current = true;
   }, []);
+
+  const applyCollapsedContentY = useCallback((contentY: number) => {
+    if (!Number.isFinite(contentY)) return;
+    collapsedContentYRef.current = contentY;
+    stackRef.current?.style.setProperty(THUMBNAIL_COLLAPSED_CONTENT_Y_VAR, `${contentY}px`);
+  }, []);
+
+  useEffect(() => {
+    const applyNativeLayout = (event: Event) => {
+      const contentY = event instanceof CustomEvent
+        ? Number((event as CustomEvent<{ contentY?: number }>).detail?.contentY)
+        : Number.NaN;
+      applyCollapsedContentY(contentY);
+    };
+    window.addEventListener(THUMBNAIL_COLLAPSED_LAYOUT_EVENT, applyNativeLayout);
+    return () => window.removeEventListener(THUMBNAIL_COLLAPSED_LAYOUT_EVENT, applyNativeLayout);
+  }, [applyCollapsedContentY]);
 
   // React replaces className when the anchor (or hover readiness) changes.
   // Restore the imperative pointer-session pose before that commit can paint.
@@ -7276,29 +7294,16 @@ export function Thumbnail() {
     );
     if (isTauri()) {
       try {
-        const { frameHeight, work, workTop, workHeight } = await collapsedNativeGeometry();
-        const clamped = clampThumbnailStackFrame(
-          x,
-          y,
-          340,
-          frameHeight,
-          work,
-          contentHeight,
-          anchor,
-          padding,
-        );
-        const next = await invoke<{ x: number; y: number }>(
+        const { work, workTop, workHeight } = await collapsedNativeGeometry();
+        const next = await invoke<{ x: number; y: number; contentY: number }>(
           "set_mini_preview_stack_position",
-          { x: clamped.x, y: clamped.y, anchor },
+          { x, y, anchor },
         );
+        applyCollapsedContentY(next.contentY);
         applyThumbnailStackGravity(
           stackRef.current,
           thumbnailStackGravityFromWorkArea({
-            pileBottom: thumbnailStackVisualPileBottom({
-              y: next.y,
-              frameHeight,
-              padding,
-            }),
+            pileBottom: next.y + THUMBNAIL_CARD_HEIGHT_PX + THUMBNAIL_STACK_CONTROL_GUTTER_PX,
             workTop,
             workHeight,
             contentHeight,
@@ -7315,10 +7320,11 @@ export function Thumbnail() {
           stackRef.current,
           thumbnailStackGravityFromPlacement(placementRef.current),
         );
-        const next = await invoke<{ x: number; y: number }>(
+        const next = await invoke<{ x: number; y: number; contentY: number }>(
           "set_mini_preview_stack_position",
           { x, y, anchor },
         );
+        applyCollapsedContentY(next.contentY);
         return next;
       }
     }
@@ -7363,7 +7369,13 @@ export function Thumbnail() {
         if (currentWindow) {
           const scale = await currentWindow.scaleFactor();
           const position = await currentWindow.outerPosition();
-          return { x: position.x / scale, y: position.y / scale };
+          const { frameHeight } = await collapsedNativeGeometry();
+          const padding = thumbnailCollapsedPadding(
+            stackRef.current?.querySelectorAll(":scope > .thumbnail-card").length ?? 1,
+          );
+          const contentY = collapsedContentYRef.current
+            ?? frameHeight - padding - THUMBNAIL_CARD_HEIGHT_PX;
+          return { x: position.x / scale, y: position.y / scale + contentY };
         }
         return readHarnessStackOffset();
       },
