@@ -164,3 +164,62 @@ across macOS, Windows, and Linux. Do not use Cache Everything on `/`.
 
 After a deploy, hashed filenames change, so visitors pick up new JS/CSS without
 a purge. Purge `/` only if a stale homepage HTML response is stuck at the edge.
+
+## Optional accounts
+
+`/account` is an intentionally separate, experimental account page, not a
+requirement for downloading or using Captures. It supports hosted WorkOS AuthKit
+email OTP login, account status, and sign-out when configured. Google login,
+desktop login, uploads, and sharing are not implemented. No homepage account
+promotion is added until this service is configured and verified for deployment.
+
+The Node process has no database connection. The Rust service in
+[`../api`](../api/README.md) owns account provisioning, authorization, PostgreSQL
+migrations, and WorkOS user-lifecycle webhooks. After the browser callback, the
+account loader sends the session's access token to Rust on the server. Rust
+returns only email and verification status. A WorkOS session alone does not grant
+local account access: disabled/deleted accounts still receive 403. The browser
+never receives tokens in loader data; the session is stored in an encrypted
+HttpOnly cookie. Logout is a CSRF-protected POST followed by a 303 redirect.
+
+Provide these runtime variables to the web process (`apps/web/.env` for Vite dev):
+
+```dotenv
+WORKOS_API_KEY=<Captures environment secret>
+WORKOS_CLIENT_ID=<matching Captures client ID>
+WORKOS_COOKIE_PASSWORD=<independently generated random secret, at least 32 characters>
+WORKOS_REDIRECT_URI=http://localhost:5174/api/auth/callback
+CAPTURES_API_URL=http://127.0.0.1:3001
+```
+
+Generate the cookie password with `openssl rand -base64 32` and store it as a
+secret. Do not reuse the API key. Use the private Rust service address in deployed
+`CAPTURES_API_URL`; only this configured origin receives tokens, and redirects
+are rejected. Use HTTPS for non-private-network connections. Missing any variable
+disables account routes (503) without preventing the public site from starting.
+
+In the **Captures** WorkOS environment (not another app's project):
+
+1. Enable Magic Auth (email one-time codes), disable email/password for this OTP-only
+   trial, and leave Google/social providers off. Authentication methods are
+   controlled by WorkOS, not the text on the Captures page.
+2. Register the exact callback URL matching `WORKOS_REDIRECT_URI`; production
+   would use `https://captur.es/api/auth/callback`.
+3. Set the sign-in URL to `/api/auth/sign-in` on the same origin and allow the
+   `/account` URL as the post-logout return URL. For orb testing, register the
+   actual portal URLs, not the server's internal loopback origin.
+4. Register `/api/webhooks/workos` on the public ingress routed to Rust, subscribe
+   to `user.updated` and `user.deleted`, and supply the signing secret to Rust.
+5. Verify real OTP delivery, callback cookies, sign-out, account creation and
+   webhook retries in staging before enabling production. The offline tests use
+   mocked WorkOS/API responses and do not verify real email delivery.
+
+Keep account HTML, `/api/auth/*`, `/api/account/*`, and TanStack server-function
+responses out of Cloudflare caches. Account responses use `no-store`; extend the
+Dynamic bypass rule to `/account` before enabling accounts. The existing Node
+image still serves the website; the new Rust image/deployment and ingress routing
+must be provisioned separately. No database migrations, shared roles, WorkOS
+dashboard settings, or production infrastructure are modified by this change.
+
+`npm run test:accounts --workspace @captures/web` runs the offline login/session
+integration checks after `npm run build:web` (also included in `npm run check`).

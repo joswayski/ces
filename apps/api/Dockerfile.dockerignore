@@ -1,0 +1,16 @@
+.git
+.amp
+.github
+**/node_modules
+**/target
+**/dist
+**/.output
+**/.env
+**/.env.*
+**/.dev.vars*
+apps/desktop/src-tauri/binaries
+apps/desktop/src-tauri/ffmpeg
+apps/desktop/ui
+apps/desktop/assets
+docs
+scripts

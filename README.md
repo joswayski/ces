@@ -82,6 +82,15 @@ Preview builds automatically publish installed-app changes from `main`, and may 
 - Optional in-app feedback (never includes your captures)
 - After an unexpected quit, Preview may send a crash diagnostic (app version, OS, and a redacted panic or OS crash summary) through the same feedback channel; it never includes captures or home-directory paths. A normal logoff or shutdown is not a crash.
 
+## Optional cloud accounts — in development
+
+Local screenshots, GIFs, and recordings never require an account. The website
+includes an optional account foundation at `/account`, using WorkOS email
+one-time codes when configured by the operator. Captures stores an internal
+account mapping and email/verification state in PostgreSQL; WorkOS manages login
+and authentication sessions. No captures are uploaded by signing in. Hosted
+uploads, sharing, Google login, and desktop sign-in are not implemented yet.
+
 ## Wishlist
 
 - Scrolling capture for content larger than the screen
