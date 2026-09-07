@@ -2,6 +2,21 @@ use image::RgbaImage;
 
 use crate::model::{DisplayDescriptor, WindowDescriptor};
 
+#[derive(Clone, Debug)]
+pub struct CursorImage {
+    pub pixels: RgbaImage,
+    pub logical_width: f64,
+    pub logical_height: f64,
+    pub hot_spot_x: f64,
+    pub hot_spot_y: f64,
+}
+
+#[derive(Clone, Debug)]
+pub struct PointerCursor {
+    pub position: (i32, i32),
+    pub image: Option<CursorImage>,
+}
+
 const CURSOR_OUTLINE: [(i32, i32); 7] = [
     (0, 0),
     (0, 22),
@@ -35,11 +50,11 @@ pub const fn screenshot_pointer_scale(display_scale_factor: f64) -> f64 {
     }
 }
 
-/// Draw a pointer glyph onto a full-display screenshot when `pointer` lands on it.
+/// Draw a captured pointer onto a full-display screenshot when its hotspot lands on it.
 pub fn overlay_pointer_cursor(
     image: &mut RgbaImage,
     display: &DisplayDescriptor,
-    pointer: (i32, i32),
+    cursor: &PointerCursor,
     pointer_scale: f64,
 ) {
     overlay_pointer_cursor_in_crop(
@@ -49,12 +64,12 @@ pub fn overlay_pointer_cursor(
         0,
         image.width(),
         image.height(),
-        pointer,
+        cursor,
         pointer_scale,
     );
 }
 
-/// Draw a pointer glyph onto a cropped screenshot when the hotspot is inside the crop.
+/// Draw a captured pointer onto a cropped screenshot when the hotspot is inside the crop.
 ///
 /// `source_width` / `source_height` are the full display buffer that `crop_x` /
 /// `crop_y` were taken from. The hotspot is tested against that crop, so a
@@ -67,7 +82,7 @@ pub fn overlay_pointer_cursor_in_crop(
     crop_y: u32,
     source_width: u32,
     source_height: u32,
-    pointer: (i32, i32),
+    cursor: &PointerCursor,
     pointer_scale: f64,
 ) {
     let Some((x, y)) = map_pointer_to_buffer(
@@ -77,7 +92,7 @@ pub fn overlay_pointer_cursor_in_crop(
         display.height,
         source_width,
         source_height,
-        pointer,
+        cursor.position,
         pointer_scale,
     ) else {
         return;
@@ -99,14 +114,21 @@ pub fn overlay_pointer_cursor_in_crop(
     if local_x < 0 || local_y < 0 || local_x >= image_width || local_y >= image_height {
         return;
     }
-    draw_cursor(image, (local_x, local_y), source_height);
+    draw_cursor(
+        image,
+        (local_x, local_y),
+        cursor.image.as_ref(),
+        f64::from(source_width) / f64::from(display.width.max(1)),
+        f64::from(source_height) / f64::from(display.height.max(1)),
+        source_height,
+    );
 }
 
-/// Draw a pointer glyph onto a window screenshot when `pointer` lands on it.
+/// Draw a captured pointer onto a window screenshot when its hotspot lands on it.
 pub fn overlay_pointer_cursor_on_window(
     image: &mut RgbaImage,
     window: &WindowDescriptor,
-    pointer: (i32, i32),
+    cursor: &PointerCursor,
     pointer_scale: f64,
 ) {
     let Some(position) = map_pointer_to_buffer(
@@ -116,12 +138,19 @@ pub fn overlay_pointer_cursor_on_window(
         window.height,
         image.width(),
         image.height(),
-        pointer,
+        cursor.position,
         pointer_scale,
     ) else {
         return;
     };
-    draw_cursor(image, position, image.height());
+    draw_cursor(
+        image,
+        position,
+        cursor.image.as_ref(),
+        f64::from(image.width()) / f64::from(window.width.max(1)),
+        f64::from(image.height()) / f64::from(window.height.max(1)),
+        image.height(),
+    );
 }
 
 #[allow(clippy::cast_possible_truncation, clippy::too_many_arguments)]
@@ -148,11 +177,48 @@ fn map_pointer_to_buffer(
 }
 
 #[allow(clippy::cast_possible_truncation)]
-fn draw_cursor(image: &mut RgbaImage, position: (i32, i32), source_height: u32) {
+fn draw_cursor(
+    image: &mut RgbaImage,
+    position: (i32, i32),
+    cursor: Option<&CursorImage>,
+    scale_x: f64,
+    scale_y: f64,
+    source_height: u32,
+) {
+    if let Some(cursor) = cursor {
+        draw_native_cursor(image, position, cursor, scale_x, scale_y);
+        return;
+    }
+
     let scale = (f64::from(source_height) / 1_080.0).round().clamp(1.0, 2.0) as i32;
     let (outline, fill) = cursor_colors(cfg!(target_os = "macos"));
     draw_polygon(image, position, &CURSOR_OUTLINE, scale, outline);
     draw_polygon(image, position, &CURSOR_FILL, scale, fill);
+}
+
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+fn draw_native_cursor(
+    image: &mut RgbaImage,
+    position: (i32, i32),
+    cursor: &CursorImage,
+    scale_x: f64,
+    scale_y: f64,
+) {
+    let width = (cursor.logical_width * scale_x).round().max(1.0) as u32;
+    let height = (cursor.logical_height * scale_y).round().max(1.0) as u32;
+    let pixels = if cursor.pixels.width() == width && cursor.pixels.height() == height {
+        cursor.pixels.clone()
+    } else {
+        image::imageops::resize(
+            &cursor.pixels,
+            width,
+            height,
+            image::imageops::FilterType::Lanczos3,
+        )
+    };
+    let x = position.0 - (cursor.hot_spot_x * scale_x).round() as i32;
+    let y = position.1 - (cursor.hot_spot_y * scale_y).round() as i32;
+    image::imageops::overlay(image, &pixels, i64::from(x), i64::from(y));
 }
 
 const fn cursor_colors(macos: bool) -> ([u8; 3], [u8; 3]) {
@@ -217,7 +283,7 @@ fn put_pixel(image: &mut RgbaImage, x: i32, y: i32, color: [u8; 3]) {
 #[cfg(test)]
 mod tests {
     use super::{
-        cursor_colors, map_pointer_to_buffer, overlay_pointer_cursor,
+        CursorImage, PointerCursor, cursor_colors, map_pointer_to_buffer, overlay_pointer_cursor,
         overlay_pointer_cursor_in_crop, overlay_pointer_cursor_on_window, screenshot_pointer_scale,
     };
     use crate::model::{DisplayDescriptor, WindowDescriptor};
@@ -232,6 +298,13 @@ mod tests {
             height,
             scale_factor,
             is_primary: true,
+        }
+    }
+
+    fn cursor(position: (i32, i32)) -> PointerCursor {
+        PointerCursor {
+            position,
+            image: None,
         }
     }
 
@@ -271,7 +344,7 @@ mod tests {
     fn paints_the_cursor_hotspot_on_a_display_capture() {
         let display = display(0, 0, 80, 60, 1.0);
         let mut image = image::RgbaImage::from_pixel(80, 60, image::Rgba([0, 0, 0, 255]));
-        overlay_pointer_cursor(&mut image, &display, (10, 12), 1.0);
+        overlay_pointer_cursor(&mut image, &display, &cursor((10, 12)), 1.0);
         assert!(image.pixels().any(|pixel| pixel.0 == [24, 24, 24, 255]));
         assert!(image.pixels().any(|pixel| pixel.0 == [248, 248, 248, 255]));
     }
@@ -297,7 +370,7 @@ mod tests {
             corner_radius: None,
         };
         let mut image = image::RgbaImage::from_pixel(80, 60, image::Rgba([0, 0, 0, 255]));
-        overlay_pointer_cursor_on_window(&mut image, &window, (50, 42), 1.0);
+        overlay_pointer_cursor_on_window(&mut image, &window, &cursor((50, 42)), 1.0);
         assert!(image.pixels().any(|pixel| pixel.0 == [24, 24, 24, 255]));
         assert!(image.pixels().any(|pixel| pixel.0 == [248, 248, 248, 255]));
     }
@@ -315,7 +388,16 @@ mod tests {
     fn paints_the_cursor_when_the_hotspot_is_inside_a_crop() {
         let display = display(0, 0, 80, 60, 1.0);
         let mut image = image::RgbaImage::from_pixel(20, 20, image::Rgba([0, 0, 0, 255]));
-        overlay_pointer_cursor_in_crop(&mut image, &display, 10, 10, 80, 60, (14, 16), 1.0);
+        overlay_pointer_cursor_in_crop(
+            &mut image,
+            &display,
+            10,
+            10,
+            80,
+            60,
+            &cursor((14, 16)),
+            1.0,
+        );
         assert!(image.pixels().any(|pixel| pixel.0 == [24, 24, 24, 255]));
     }
 
@@ -323,7 +405,30 @@ mod tests {
     fn skips_the_cursor_when_the_hotspot_is_outside_the_crop() {
         let display = display(0, 0, 80, 60, 1.0);
         let mut image = image::RgbaImage::from_pixel(20, 20, image::Rgba([0, 0, 0, 255]));
-        overlay_pointer_cursor_in_crop(&mut image, &display, 10, 10, 80, 60, (8, 16), 1.0);
+        overlay_pointer_cursor_in_crop(&mut image, &display, 10, 10, 80, 60, &cursor((8, 16)), 1.0);
         assert!(image.pixels().all(|pixel| pixel.0 == [0, 0, 0, 255]));
+    }
+
+    #[test]
+    fn composites_native_cursor_pixels_relative_to_the_hotspot() {
+        let display = display(0, 0, 20, 20, 1.0);
+        let mut image = image::RgbaImage::from_pixel(20, 20, image::Rgba([0, 0, 0, 255]));
+        let cursor = PointerCursor {
+            position: (10, 10),
+            image: Some(CursorImage {
+                pixels: image::RgbaImage::from_pixel(4, 4, image::Rgba([255, 0, 0, 128])),
+                logical_width: 4.0,
+                logical_height: 4.0,
+                hot_spot_x: 1.0,
+                hot_spot_y: 2.0,
+            }),
+        };
+
+        overlay_pointer_cursor(&mut image, &display, &cursor, 1.0);
+
+        assert_eq!(image.get_pixel(8, 8).0, [0, 0, 0, 255]);
+        assert_eq!(&image.get_pixel(9, 8).0[..3], &[128, 0, 0]);
+        assert_eq!(&image.get_pixel(12, 11).0[..3], &[128, 0, 0]);
+        assert_eq!(image.get_pixel(13, 12).0, [0, 0, 0, 255]);
     }
 }

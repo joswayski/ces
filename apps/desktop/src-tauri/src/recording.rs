@@ -380,19 +380,15 @@ pub(crate) async fn prepare_capture_selector_inner(
         let (display, snapshot_png, image, displays, targets, pending_windows, cursor) =
             if freeze_screen {
                 let prefetched = crate::take_prefetched_or_capture_freeze_frame(&state)?;
-                let pointer = prefetched.pointer;
+                let cursor = prefetched.cursor;
                 let frame = prefetched.frame;
                 let monitors_task = {
                     let state = state.clone();
                     std::thread::spawn(move || state.monitors())
                 };
-                let snapshot_png = crate::encode_overlay_snapshot_with_cursor(
-                    &frame.image,
-                    &frame.descriptor,
-                    pointer,
-                    state.settings().show_cursor_in_screenshots
-                        || state.settings().recording.show_cursor,
-                )?;
+                // The live system cursor is already visible over this frozen
+                // selector; drawing it into the preview would duplicate it.
+                let snapshot_png = storage::encode_overlay_snapshot(&frame.image)?;
                 let displays = selection_displays_from_list(
                     monitors_task
                         .join()
@@ -411,7 +407,7 @@ pub(crate) async fn prepare_capture_selector_inner(
                     displays,
                     targets,
                     pending_windows,
-                    pointer,
+                    cursor,
                 )
             } else {
                 let displays = state.monitors()?;
@@ -569,14 +565,9 @@ async fn select_capture_display_inner(
         .ok_or(AppError::InvalidSelection)?;
     let freeze_screen = current.frozen;
     let (display, snapshot_png, image, targets, cursor) = if freeze_screen {
-        let pointer = crate::pointer_position();
+        let cursor = crate::pointer_cursor();
         let frame = state.backend.capture_display(&requested_display.id)?;
-        let snapshot_png = crate::encode_overlay_snapshot_with_cursor(
-            &frame.image,
-            &frame.descriptor,
-            pointer,
-            state.settings().show_cursor_in_screenshots || state.settings().recording.show_cursor,
-        )?;
+        let snapshot_png = storage::encode_overlay_snapshot(&frame.image)?;
         let targets = crate::capturable_windows_for_display(
             state.windows(),
             &frame.descriptor,
@@ -593,7 +584,7 @@ async fn select_capture_display_inner(
             snapshot_png,
             Some(frame.image),
             targets,
-            pointer,
+            cursor,
         )
     } else {
         let targets =
@@ -912,7 +903,7 @@ fn screenshot_image_for_target(
             source,
             &selection.summary.windows,
             target,
-            selection.cursor,
+            selection.cursor.as_ref(),
             enabled,
         );
         Ok(image)
@@ -927,11 +918,16 @@ fn live_screenshot_image_for_target(
     enabled: bool,
 ) -> Result<image::RgbaImage, AppError> {
     crate::ensure_capture_session_available()?;
-    let pointer = crate::pointer_position();
+    let cursor = crate::pointer_cursor();
     match target {
         RecordingTarget::Display { display_id } => {
             let mut frame = state.backend.capture_display(display_id)?;
-            crate::apply_screenshot_cursor(&mut frame.image, &frame.descriptor, pointer, enabled);
+            crate::apply_screenshot_cursor(
+                &mut frame.image,
+                &frame.descriptor,
+                cursor.as_ref(),
+                enabled,
+            );
             Ok(frame.image)
         }
         RecordingTarget::Region { display_id, rect } => {
@@ -942,7 +938,7 @@ fn live_screenshot_image_for_target(
                 &frame.descriptor,
                 &frame.image,
                 recording_rect_to_logical(rect),
-                pointer,
+                cursor.as_ref(),
                 enabled,
             );
             Ok(image)
@@ -967,7 +963,7 @@ fn live_screenshot_image_for_target(
                             })
                             .map(|display| display.scale_factor)
                             .unwrap_or(1.0),
-                        pointer,
+                        cursor.as_ref(),
                         enabled,
                     );
                 }
@@ -986,7 +982,7 @@ fn live_screenshot_image_for_target(
                     &frame.descriptor,
                     &frame.image,
                     window,
-                    pointer,
+                    cursor.as_ref(),
                     enabled,
                 );
                 Ok(image)
@@ -1001,12 +997,12 @@ fn apply_screenshot_cursor_to_recording_target(
     source: &image::RgbaImage,
     windows: &[captures_capture::WindowDescriptor],
     target: &RecordingTarget,
-    pointer: Option<(i32, i32)>,
+    cursor: Option<&captures_capture::PointerCursor>,
     enabled: bool,
 ) {
     match target {
         RecordingTarget::Display { .. } => {
-            crate::apply_screenshot_cursor(image, display, pointer, enabled);
+            crate::apply_screenshot_cursor(image, display, cursor, enabled);
         }
         RecordingTarget::Region { rect, .. } => {
             crate::apply_screenshot_cursor_to_region(
@@ -1014,14 +1010,14 @@ fn apply_screenshot_cursor_to_recording_target(
                 display,
                 source,
                 recording_rect_to_logical(rect),
-                pointer,
+                cursor,
                 enabled,
             );
         }
         RecordingTarget::Window { window_id } => {
             if let Some(window) = windows.iter().find(|window| &window.id == window_id) {
                 crate::apply_screenshot_cursor_to_window_crop(
-                    image, display, source, window, pointer, enabled,
+                    image, display, source, window, cursor, enabled,
                 );
             }
         }

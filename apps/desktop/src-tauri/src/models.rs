@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use captures_capture::{CaptureMode, DisplayDescriptor, WindowDescriptor};
+use captures_capture::{CaptureMode, DisplayDescriptor, PointerCursor, WindowDescriptor};
 use captures_recording::{MaxResolution, RecordingKind, RecordingTarget};
 use directories::{ProjectDirs, UserDirs};
 use image::RgbaImage;
@@ -414,7 +414,7 @@ pub struct RecordingSelection {
     pub summary: RecordingSelectionSession,
     pub image: Option<RgbaImage>,
     pub snapshot_png: Vec<u8>,
-    pub cursor: Option<(i32, i32)>,
+    pub cursor: Option<PointerCursor>,
     /// Frozen pixels include Captures overlay or menu chrome, so commit must
     /// not live-recapture after a screenshot countdown.
     pub includes_capture_ui: bool,
@@ -878,9 +878,9 @@ pub struct CaptureSession {
     pub image: Option<RgbaImage>,
     pub snapshot_png: Vec<u8>,
     pub windows: Vec<WindowDescriptor>,
-    /// Pointer sample taken with a freeze-frame so stills can composite the
-    /// cursor after cropping without baking it into the source image.
-    pub cursor: Option<(i32, i32)>,
+    /// Cursor sampled with a freeze-frame so stills can composite its native
+    /// image after cropping without baking it into the source image.
+    pub cursor: Option<PointerCursor>,
     pub shell_chrome: Vec<WindowDescriptor>,
     pub windows_ready: bool,
     /// Frozen pixels include Captures overlay or menu chrome, so commit must
