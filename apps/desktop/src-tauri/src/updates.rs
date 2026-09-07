@@ -921,9 +921,6 @@ fn create_update_notice(
     .focusable(false)
     .focused(false)
     .visible(false)
-    .on_page_load(crate::document_window_page_load_handler(
-        "failed to reveal the update notice",
-    ))
     .build()?;
     crate::apply_tray_notice_position(&window, placement)?;
     window.show()?;
