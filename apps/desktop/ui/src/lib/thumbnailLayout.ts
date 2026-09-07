@@ -46,8 +46,8 @@ export const THUMBNAIL_STACK_PEEK_JITTER_PX = 0.4;
 export const THUMBNAIL_STACK_PEEK_JITTER_DECAY = 0.58;
 
 /** Restrained paper-stack rotation range for cards behind the front preview. */
-export const THUMBNAIL_STACK_LAYER_ROTATION_MIN_DEG = 1.4;
-export const THUMBNAIL_STACK_LAYER_ROTATION_MAX_DEG = 2.4;
+export const THUMBNAIL_STACK_LAYER_ROTATION_MIN_DEG = 2.7;
+export const THUMBNAIL_STACK_LAYER_ROTATION_MAX_DEG = 3;
 
 /** Idle collapsed peek per pose unit (matches compact rest `translateY`). */
 export const THUMBNAIL_STACK_IDLE_PEEK_PX = 13;

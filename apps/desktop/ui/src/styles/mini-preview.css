@@ -154,7 +154,17 @@ body:has(.thumbnail-stack),
   border-radius: 12px;
   box-shadow:
     var(--thumbnail-card-shadow),
-    0 0 0 1px rgba(255, 255, 255, 0.08);
+    0 0 0 1px rgba(
+      255,
+      255,
+      255,
+      calc(
+        0.08
+        + min(1, var(--thumbnail-stack-pile-depth, 0))
+          * var(--thumbnail-stack-center-proximity, 0)
+          * 0.22
+      )
+    );
   cursor: -webkit-grab;
   cursor: grab;
   transition:
@@ -2181,7 +2191,13 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
           * var(--thumbnail-stack-expand-sign, 1)
       )
     )
-    scale(calc(1 - var(--thumbnail-stack-pile-depth, 0) * 0.025));
+    scale(calc(
+      1
+      - var(--thumbnail-stack-pile-depth, 0) * 0.025
+      + var(--thumbnail-stack-pile-depth, 0)
+        * var(--thumbnail-stack-center-proximity, 0)
+        * 0.025
+    ));
   --thumbnail-stack-hover-transform:
     translate3d(
       calc(var(--thumbnail-stack-pile-depth, 0) * -0.6px),
@@ -2206,7 +2222,13 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
           * var(--thumbnail-stack-expand-sign, 1)
       )
     )
-    scale(calc(1 - var(--thumbnail-stack-pile-depth, 0) * 0.02));
+    scale(calc(
+      1
+      - var(--thumbnail-stack-pile-depth, 0) * 0.02
+      + var(--thumbnail-stack-pile-depth, 0)
+        * var(--thumbnail-stack-center-proximity, 0)
+        * 0.02
+    ));
   --thumbnail-stack-expanded-transform:
     translate3d(
       0,
@@ -2634,7 +2656,13 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
           * var(--thumbnail-stack-expand-sign, 1)
       )
     )
-    scale(calc(1 - var(--thumbnail-stack-pile-depth, 0) * 0.02));
+    scale(calc(
+      1
+      - var(--thumbnail-stack-pile-depth, 0) * 0.02
+      + var(--thumbnail-stack-pile-depth, 0)
+        * var(--thumbnail-stack-center-proximity, 0)
+        * 0.02
+    ));
   filter: brightness(calc(1 - var(--thumbnail-stack-pile-depth, 0) * 0.12));
   box-shadow:
     var(--thumbnail-card-shadow),
