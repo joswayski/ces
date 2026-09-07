@@ -392,7 +392,14 @@ export type ThumbnailStackWorkGravity = {
   bottomGap?: number;
 };
 
-/** Gravity from a native window's visible pile bottom in the monitor work area. */
+/**
+ * Gravity from a native window's visible pile bottom in the monitor work area.
+ *
+ * The pile bottom has a 264px minimum: its front card (160px) must remain
+ * clear of the 52px control gutter on both sides. Measure travel from that
+ * visible minimum rather than the work-area top so the visual midpoint maps
+ * to zero gravity.
+ */
 export function thumbnailStackGravityFromWorkArea({
   pileBottom,
   workTop,
@@ -401,10 +408,10 @@ export function thumbnailStackGravityFromWorkArea({
   bottomGap = 0,
 }: ThumbnailStackWorkGravity): number {
   const workBottom = workTop + workHeight - Math.max(0, bottomGap);
-  const travel = workBottom - workTop - Math.max(0, contentHeight);
+  const pileTop = workTop + Math.max(0, contentHeight);
+  const travel = workBottom - pileTop;
   if (travel <= 1) return 1;
-  const fromTop = (workBottom - pileBottom) / travel;
-  return thumbnailStackGravityFromNormalizedY(1 - fromTop);
+  return thumbnailStackGravityFromNormalizedY((pileBottom - pileTop) / travel);
 }
 
 /** Duration for one-slot overflow-cue scrolls (ease-out). */
