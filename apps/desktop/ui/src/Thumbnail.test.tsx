@@ -44,6 +44,22 @@ const artifact: CaptureArtifact = {
   clipboard_copy_status: "copied",
 };
 
+const secondArtifact: CaptureArtifact = {
+  ...artifact,
+  id: "capture-2",
+  preview_url: "captures-capture://artifact/capture-2",
+  full_url: "captures-capture://artifact-full/capture-2",
+};
+
+function useArtifactFixture(artifacts: CaptureArtifact[]) {
+  const invokeDefault = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation((command, args, options) => (
+    command === "get_artifacts"
+      ? Promise.resolve(artifacts)
+      : invokeDefault(command, args, options)
+  ));
+}
+
 describe("Thumbnail", () => {
   beforeEach(() => {
     vi.mocked(invoke).mockImplementation(async (command) => {
@@ -286,8 +302,9 @@ describe("Thumbnail", () => {
   });
 
   it("applies grab and pointer cursors from DOM hover without waiting for a click", async () => {
+    useArtifactFixture([artifact, secondArtifact]);
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const image = within(card).getByRole("img", { name: "Screenshot preview" });
     const minimize = screen.getByRole("button", { name: "Minimize previews" });
     Object.defineProperty(document, "elementFromPoint", {
@@ -445,7 +462,7 @@ describe("Thumbnail", () => {
     pointerTarget = firstDelete;
 
     fireEvent.click(firstDelete);
-    expect(minimizePreviews).toBeEnabled();
+    expect(minimizePreviews).not.toBeInTheDocument();
 
     await waitFor(() => {
       const ignoreCalls = vi.mocked(invoke).mock.calls
@@ -464,9 +481,8 @@ describe("Thumbnail", () => {
     fireEvent.click(secondDelete);
     expect(cards[0]).toHaveClass("thumbnail-exit-delete");
     expect(cards[1]).toHaveClass("thumbnail-exit-delete");
-    expect(screen.getByRole("button", { name: "Minimize previews" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Minimize previews" }).closest(".thumbnail-stack-toolbar"))
-      .toHaveClass("thumbnail-stack-toolbar-exiting");
+    expect(screen.queryByRole("button", { name: "Minimize previews" })).toBeNull();
+    expect(document.querySelector(".thumbnail-stack-toolbar")).toBeNull();
   });
 
   it("keeps a slid preview in place when it is deleted before the hole below is removed", async () => {
@@ -528,7 +544,7 @@ describe("Thumbnail", () => {
       full_url: "captures-capture://artifact-full/capture-2",
     };
     vi.mocked(invoke).mockImplementation(async (command) => {
-      if (command === "get_artifacts") return [artifact, secondArtifact];
+      if (command === "get_artifacts") return [artifact, secondArtifact, { ...artifact, id: "capture-3" }];
       if (command === "get_clipboard_state") {
         return { revision: 0, artifact_id: secondArtifact.id };
       }
@@ -544,7 +560,6 @@ describe("Thumbnail", () => {
     try {
       fireEvent.click(within(cards[1]).getByRole("button", { name: "Delete" }));
       expect(cards[1]).toHaveClass("thumbnail-exiting");
-
       fireEvent.click(screen.getByRole("button", { name: "Minimize previews" }));
       await act(async () => {
         await vi.advanceTimersByTimeAsync(32);
@@ -562,7 +577,7 @@ describe("Thumbnail", () => {
       expect(cards[0].style.getPropertyValue("--thumbnail-stack-shift-slots")).toBe("");
 
       await act(async () => {
-        fireEvent.click(screen.getByRole("button", { name: "Expand 2 previews" }));
+        fireEvent.click(screen.getByRole("button", { name: "Expand 3 previews" }));
         await Promise.resolve();
       });
       await act(async () => {
@@ -585,7 +600,7 @@ describe("Thumbnail", () => {
       full_url: "captures-capture://artifact-full/capture-2",
     };
     vi.mocked(invoke).mockImplementation(async (command) => {
-      if (command === "get_artifacts") return [artifact, secondArtifact];
+      if (command === "get_artifacts") return [artifact, secondArtifact, { ...artifact, id: "capture-3" }];
       if (command === "get_clipboard_state") {
         return { revision: 0, artifact_id: secondArtifact.id };
       }
@@ -614,7 +629,7 @@ describe("Thumbnail", () => {
       expect(cards[0].style.translate).toBe("");
       expect(cards[0].style.getPropertyValue("--thumbnail-stack-shift-slots")).toBe("1");
       expect(cards[0]).toHaveStyle({
-        "--thumbnail-stack-base-depth": "1",
+        "--thumbnail-stack-base-depth": "2",
       });
     } finally {
       vi.useRealTimers();
@@ -832,9 +847,8 @@ describe("Thumbnail", () => {
     const card = await screen.findByRole("article");
     fireEvent.click(within(card).getByRole("button", { name: "Delete" }));
     expect(card).toHaveClass("thumbnail-exiting");
-    expect(screen.getByRole("button", { name: "Minimize previews" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Minimize previews" }).closest(".thumbnail-stack-toolbar"))
-      .toHaveClass("thumbnail-stack-toolbar-exiting");
+    expect(screen.queryByRole("button", { name: "Minimize previews" })).toBeNull();
+    expect(document.querySelector(".thumbnail-stack-toolbar")).toBeNull();
 
     await waitFor(() => {
       const ignoreCalls = vi.mocked(invoke).mock.calls
@@ -861,9 +875,8 @@ describe("Thumbnail", () => {
     const card = await screen.findByRole("article");
     fireEvent.click(within(card).getByRole("button", { name: "Close" }));
     expect(card).toHaveClass("thumbnail-exit-dismiss");
-    expect(screen.getByRole("button", { name: "Minimize previews" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Minimize previews" }).closest(".thumbnail-stack-toolbar"))
-      .toHaveClass("thumbnail-stack-toolbar-exiting");
+    expect(screen.queryByRole("button", { name: "Minimize previews" })).toBeNull();
+    expect(document.querySelector(".thumbnail-stack-toolbar")).toBeNull();
 
     await waitFor(() => {
       const ignoreCalls = vi.mocked(invoke).mock.calls
@@ -1382,7 +1395,8 @@ describe("Thumbnail", () => {
       expect(remaining).not.toHaveClass("thumbnail-exiting");
       expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled();
       expect(screen.queryByRole("button", { name: "Clear all previews" })).toBeNull();
-      expect(screen.getByRole("button", { name: "Minimize previews" })).toBeEnabled();
+      expect(screen.queryByRole("button", { name: "Minimize previews" })).toBeNull();
+      expect(document.querySelector(".thumbnail-stack-toolbar")).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -1537,6 +1551,7 @@ describe("Thumbnail", () => {
   });
 
   it("keeps a collapsed pile collapsed and draggable after a new capture", async () => {
+    useArtifactFixture([artifact, secondArtifact]);
     type CaptureCompletedHandler = (event: { payload: CaptureArtifact }) => void;
     let onCaptureCompleted: CaptureCompletedHandler | null = null;
     vi.mocked(listen).mockImplementation(async (event, handler) => {
@@ -1547,7 +1562,7 @@ describe("Thumbnail", () => {
     });
 
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Minimize previews" }));
@@ -1558,15 +1573,6 @@ describe("Thumbnail", () => {
     vi.useRealTimers();
 
     await waitFor(() => expect(onCaptureCompleted).not.toBeNull());
-    const secondArtifact = {
-      ...artifact,
-      id: "capture-2",
-      preview_url: "captures-capture://artifact/capture-2",
-      full_url: "captures-capture://artifact-full/capture-2",
-    };
-    await act(async () => {
-      onCaptureCompleted?.({ payload: secondArtifact });
-    });
 
     const offsetBeforeGrowth = Number.parseFloat(
       document.documentElement.style.getPropertyValue("--thumbnail-stack-drag-y") || "0",
@@ -1616,8 +1622,9 @@ describe("Thumbnail", () => {
   });
 
   it("drags the collapsed pile instead of expanding once the pointer moves", async () => {
+    useArtifactFixture([artifact, secondArtifact]);
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Minimize previews" }));
@@ -1627,7 +1634,7 @@ describe("Thumbnail", () => {
     });
     vi.useRealTimers();
 
-    const expand = screen.getByRole("button", { name: "Expand preview" });
+    const expand = screen.getByRole("button", { name: "Expand 2 previews" });
     fireEvent.pointerDown(expand, {
       button: 0,
       pointerId: 1,
@@ -1662,8 +1669,9 @@ describe("Thumbnail", () => {
   });
 
   it("does not turn a press during drop settlement into an expand click", async () => {
+    useArtifactFixture([artifact, secondArtifact]);
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Minimize previews" }));
@@ -1671,7 +1679,7 @@ describe("Thumbnail", () => {
       await vi.advanceTimersByTimeAsync(32 + THUMBNAIL_STACK_EXPAND_COLLAPSE_MS);
     });
     vi.useRealTimers();
-    const expand = screen.getByRole("button", { name: "Expand preview" });
+    const expand = screen.getByRole("button", { name: "Expand 2 previews" });
     fireEvent.pointerDown(expand, { button: 0, pointerId: 1, screenX: 40, screenY: 400 });
     fireEvent.pointerMove(window, { pointerId: 1, screenX: 120, screenY: 40 });
     await waitFor(() => expect(stack).toHaveClass("thumbnail-stack-dragging"));
@@ -1691,8 +1699,9 @@ describe("Thumbnail", () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 1200 });
 
+    useArtifactFixture([artifact, secondArtifact]);
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Minimize previews" }));
@@ -1702,7 +1711,7 @@ describe("Thumbnail", () => {
     });
     vi.useRealTimers();
 
-    const expand = screen.getByRole("button", { name: "Expand preview" });
+    const expand = screen.getByRole("button", { name: "Expand 2 previews" });
     fireEvent.pointerDown(expand, {
       button: 0,
       pointerId: 1,
@@ -1747,10 +1756,17 @@ describe("Thumbnail", () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 1_200 });
 
+    type ArtifactRemovedHandler = (event: { payload: string }) => void;
+    let onArtifactRemoved: ArtifactRemovedHandler | undefined;
+    vi.mocked(listen).mockImplementation(async (event, handler) => {
+      if (event === "artifact-removed") onArtifactRemoved = handler as ArtifactRemovedHandler;
+      return () => undefined;
+    });
+    const initialCount = Math.max(2, count);
     const invokeDefault = vi.mocked(invoke).getMockImplementation()!;
     vi.mocked(invoke).mockImplementation((command, args, options) => (
       command === "get_artifacts"
-        ? Promise.resolve(Array.from({ length: count }, (_, index) => ({ ...artifact, id: `capture-${index}` })))
+        ? Promise.resolve(Array.from({ length: initialCount }, (_, index) => ({ ...artifact, id: `capture-${index}` })))
         : invokeDefault(command, args, options)
     ));
     render(<Thumbnail />);
@@ -1763,6 +1779,13 @@ describe("Thumbnail", () => {
       await vi.advanceTimersByTimeAsync(32);
       await vi.advanceTimersByTimeAsync(THUMBNAIL_STACK_EXPAND_COLLAPSE_MS);
     });
+    if (count === 1) {
+      await act(async () => {
+        onArtifactRemoved!({ payload: "capture-0" });
+      });
+      expect(screen.getAllByRole("article", { hidden: true })).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "Expand preview" })).toBeInTheDocument();
+    }
     vi.useRealTimers();
 
     const expand = screen.getByRole("button", { name: /^Expand .*preview/ });
@@ -1868,8 +1891,9 @@ describe("Thumbnail", () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 1200 });
 
+    useArtifactFixture([artifact, secondArtifact]);
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Minimize previews" }));
@@ -1879,7 +1903,7 @@ describe("Thumbnail", () => {
     });
     vi.useRealTimers();
 
-    const expand = screen.getByRole("button", { name: "Expand preview" });
+    const expand = screen.getByRole("button", { name: "Expand 2 previews" });
     fireEvent.pointerDown(expand, {
       button: 0,
       pointerId: 1,
@@ -1918,8 +1942,9 @@ describe("Thumbnail", () => {
   });
 
   it("can drag the collapsed pile a second time without expanding first", async () => {
+    useArtifactFixture([artifact, secondArtifact]);
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Minimize previews" }));
@@ -1929,7 +1954,7 @@ describe("Thumbnail", () => {
     });
     vi.useRealTimers();
 
-    const expand = screen.getByRole("button", { name: "Expand preview" });
+    const expand = screen.getByRole("button", { name: "Expand 2 previews" });
     expand.setPointerCapture = vi.fn();
     expand.releasePointerCapture = vi.fn();
     expand.hasPointerCapture = vi.fn(() => false);
@@ -1998,8 +2023,9 @@ describe("Thumbnail", () => {
   it("opens downward after the collapsed pile is dragged to the top", async () => {
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 1_280 });
+    useArtifactFixture([artifact, secondArtifact]);
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Minimize previews" }));
@@ -2009,7 +2035,7 @@ describe("Thumbnail", () => {
     });
     vi.useRealTimers();
 
-    const expand = screen.getByRole("button", { name: "Expand preview" });
+    const expand = screen.getByRole("button", { name: "Expand 2 previews" });
     fireEvent.pointerDown(expand, {
       button: 0,
       pointerId: 7,
@@ -2046,7 +2072,7 @@ describe("Thumbnail", () => {
 
   it("opens downward from a top-left preference", async () => {
     vi.mocked(invoke).mockImplementation(async (command) => {
-      if (command === "get_artifacts") return [artifact];
+      if (command === "get_artifacts") return [artifact, secondArtifact];
       if (command === "get_clipboard_state") {
         return { revision: 0, artifact_id: artifact.id };
       }
@@ -2059,7 +2085,7 @@ describe("Thumbnail", () => {
       return undefined;
     });
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     await waitFor(() => {
       expect(stack).toHaveClass("thumbnail-stack-anchor-top");
@@ -2072,7 +2098,7 @@ describe("Thumbnail", () => {
 
   it("keeps Show less on the right from a bottom-right preference", async () => {
     vi.mocked(invoke).mockImplementation(async (command) => {
-      if (command === "get_artifacts") return [artifact];
+      if (command === "get_artifacts") return [artifact, secondArtifact];
       if (command === "get_clipboard_state") {
         return { revision: 0, artifact_id: artifact.id };
       }
@@ -2085,7 +2111,7 @@ describe("Thumbnail", () => {
       return undefined;
     });
     render(<Thumbnail />);
-    await screen.findByRole("article");
+    await screen.findAllByRole("article");
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Minimize previews" })
         .closest(".thumbnail-stack-toolbar")).toHaveClass("thumbnail-stack-toolbar-anchor-right");
@@ -2096,7 +2122,7 @@ describe("Thumbnail", () => {
 
   it("keeps Show less on the top-right from a top-right preference", async () => {
     vi.mocked(invoke).mockImplementation(async (command) => {
-      if (command === "get_artifacts") return [artifact];
+      if (command === "get_artifacts") return [artifact, secondArtifact];
       if (command === "get_clipboard_state") {
         return { revision: 0, artifact_id: artifact.id };
       }
@@ -2109,7 +2135,7 @@ describe("Thumbnail", () => {
       return undefined;
     });
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     await waitFor(() => {
       expect(stack).toHaveClass("thumbnail-stack-anchor-top");
@@ -2121,6 +2147,7 @@ describe("Thumbnail", () => {
   });
 
   it("keeps a newer corner preference when the initial settings request finishes late", async () => {
+    useArtifactFixture([artifact, secondArtifact]);
     let finishSettings!: (settings: { mini_preview_placement: string }) => void;
     const initial = new Promise<{ mini_preview_placement: string }>((resolve) => {
       finishSettings = resolve;
@@ -2136,7 +2163,7 @@ describe("Thumbnail", () => {
       command === "get_settings" ? initial : defaultInvoke(command, args, options)
     ));
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     await act(async () => {
       settingsChanged!({ payload: { mini_preview_placement: "top_right" } });
@@ -2209,8 +2236,9 @@ describe("Thumbnail", () => {
   });
 
   it("keeps the hover pose on press and gathers only when a drag starts", async () => {
+    useArtifactFixture([artifact, secondArtifact]);
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Minimize previews" }));
@@ -2219,7 +2247,7 @@ describe("Thumbnail", () => {
       await vi.advanceTimersByTimeAsync(THUMBNAIL_STACK_EXPAND_COLLAPSE_MS);
     });
 
-    const expand = screen.getByRole("button", { name: "Expand preview" });
+    const expand = screen.getByRole("button", { name: "Expand 2 previews" });
     fireEvent.pointerDown(expand, {
       button: 0,
       pointerId: 3,
@@ -2246,7 +2274,7 @@ describe("Thumbnail", () => {
     expect(stack).not.toHaveClass("thumbnail-stack-drag-sway");
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(thumbnailStackFanCollapseMs(1) - 1);
+      await vi.advanceTimersByTimeAsync(thumbnailStackFanCollapseMs(2) - 1);
     });
     expect(stack).not.toHaveClass("thumbnail-stack-drag-sway");
 
@@ -2266,8 +2294,9 @@ describe("Thumbnail", () => {
   });
 
   it("drops collapsed hover chrome after a drag ends away from the pile", async () => {
+    useArtifactFixture([artifact, secondArtifact]);
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Minimize previews" }));
@@ -2277,7 +2306,7 @@ describe("Thumbnail", () => {
     });
     vi.useRealTimers();
 
-    const expand = screen.getByRole("button", { name: "Expand preview" });
+    const expand = screen.getByRole("button", { name: "Expand 2 previews" });
     expand.setPointerCapture = vi.fn();
     expand.releasePointerCapture = vi.fn();
     expand.hasPointerCapture = vi.fn(() => true);
@@ -2334,8 +2363,9 @@ describe("Thumbnail", () => {
   });
 
   it("cancels HTML5 dragstart on collapsed screenshots so the pile can move", async () => {
+    useArtifactFixture([artifact, secondArtifact]);
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Minimize previews" }));
     await act(async () => {
@@ -2354,7 +2384,7 @@ describe("Thumbnail", () => {
   it("does not play card hover after expanding until the pointer moves", async () => {
     let pointer = { x: 40, y: 80, inside: true };
     vi.mocked(invoke).mockImplementation(async (command) => {
-      if (command === "get_artifacts") return [artifact];
+      if (command === "get_artifacts") return [artifact, secondArtifact];
       if (command === "get_clipboard_state") {
         return { revision: 0, artifact_id: artifact.id };
       }
@@ -2367,7 +2397,7 @@ describe("Thumbnail", () => {
     });
 
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
     const stack = card.closest(".thumbnail-stack")!;
     vi.useFakeTimers();
 
@@ -2379,7 +2409,7 @@ describe("Thumbnail", () => {
     expect(stack).toHaveClass("thumbnail-stack-minimized");
 
     await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: "Expand preview" }));
+      fireEvent.click(screen.getByRole("button", { name: "Expand 2 previews" }));
       await Promise.resolve();
     });
     expect(stack).toHaveClass("thumbnail-stack-expanding");
