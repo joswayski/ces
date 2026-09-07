@@ -42,7 +42,6 @@ use objc2_app_kit::{
     NSEventType, NSPanel, NSPasteboard, NSRunningApplication, NSScreen, NSStatusWindowLevel,
     NSTrackingArea, NSTrackingAreaOptions, NSView, NSViewLayerContentsPlacement, NSWindow,
     NSWindowCollectionBehavior, NSWindowSharingType, NSWindowStyleMask, NSWorkspace,
-    NSWorkspaceDidActivateApplicationNotification,
 };
 use objc2_foundation::{
     NSNotification, NSNotificationCenter, NSNumber, NSObject, NSObjectProtocol, NSOperationQueue,
@@ -1065,16 +1064,6 @@ static CAPTURE_ESCAPE_HANDLER: Mutex<Option<fn()>> = Mutex::new(None);
 // Order those documents out only after the capture surface is opaque.
 static FRONTMOST_APP_BEFORE_CAPTURE: Mutex<Option<Retained<NSRunningApplication>>> =
     Mutex::new(None);
-// The interactive update notice activates Captures so its buttons and keyboard
-// focus work. Keep its activation handoff separate from capture overlays: when
-// the notice hides, AppKit otherwise donates key status to Preferences, history,
-// or an editor and raises that window over the app the user was working in.
-static FRONTMOST_APP_BEFORE_UPDATE_NOTICE: Mutex<Option<Retained<NSRunningApplication>>> =
-    Mutex::new(None);
-// `Some(None)` means the update notice most recently yielded to another
-// Captures window; the nested option distinguishes that from no focus handoff.
-static PENDING_UPDATE_NOTICE_REFOCUS_TARGET: Mutex<Option<Option<Retained<NSRunningApplication>>>> =
-    Mutex::new(None);
 // A thumbnail click can make Captures active before its handler hides the
 // panel. Preserve the external app while hover first gives the panel key status
 // so AppKit cannot donate focus to an open editor during collapse.
@@ -1094,11 +1083,6 @@ thread_local! {
     // lifting preferences/history/feedback above the user's work.
     static CONCEALED_DOCUMENT_REVEAL_YIELD_TO: RefCell<Option<Retained<NSRunningApplication>>> =
         const { RefCell::new(None) };
-    // NSWorkspace retains the block-backed observer, while this token keeps the
-    // registration discoverable and prevents duplicate observers.
-    static UPDATE_NOTICE_WORKSPACE_OBSERVER:
-        RefCell<Option<Retained<ProtocolObject<dyn NSObjectProtocol>>>> =
-            const { RefCell::new(None) };
     static THUMBNAIL_RESIGN_ACTIVE_OBSERVER:
         RefCell<Option<Retained<ProtocolObject<dyn NSObjectProtocol>>>> =
             const { RefCell::new(None) };
@@ -2320,166 +2304,6 @@ pub fn activate_document_window(window: &WebviewWindow) -> Result<(), &'static s
     Ok(())
 }
 
-/// Remembers the external app that an interactive update notice is about to
-/// cover. Call only when the notice is taking focus; status refreshes while it
-/// is already key must preserve the original handoff target.
-pub fn remember_frontmost_app_before_update_notice_activation() {
-    if !is_main_thread() {
-        let _ = run_on_main(remember_frontmost_app_before_update_notice_activation);
-        return;
-    }
-    ensure_update_notice_workspace_observer();
-    let previous = current_frontmost_if_not_captures();
-    let mut pending = PENDING_UPDATE_NOTICE_REFOCUS_TARGET
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    *pending = None;
-    drop(pending);
-    let mut slot = FRONTMOST_APP_BEFORE_UPDATE_NOTICE
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    *slot = previous;
-}
-
-fn ensure_update_notice_workspace_observer() {
-    debug_assert!(is_main_thread());
-    UPDATE_NOTICE_WORKSPACE_OBSERVER.with_borrow_mut(|slot| {
-        if slot.is_some() {
-            return;
-        }
-        let block = RcBlock::new(|_notification: ptr::NonNull<NSNotification>| {
-            refresh_update_notice_target_after_workspace_activation();
-        });
-        let center = NSWorkspace::sharedWorkspace().notificationCenter();
-        let queue = NSOperationQueue::mainQueue();
-        // SAFETY: The notification name and object types match NSWorkspace's
-        // activation notification, and the main operation queue serializes the
-        // callback with the AppKit-only handoff state below.
-        let observer = unsafe {
-            center.addObserverForName_object_queue_usingBlock(
-                Some(NSWorkspaceDidActivateApplicationNotification),
-                None,
-                Some(&queue),
-                &block,
-            )
-        };
-        *slot = Some(observer);
-    });
-}
-
-fn refresh_update_notice_target_after_workspace_activation() {
-    debug_assert!(is_main_thread());
-    let current = current_frontmost_if_not_captures();
-    let mut pending = PENDING_UPDATE_NOTICE_REFOCUS_TARGET
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    refresh_notice_activation_source_while_unfocused(&mut pending, current);
-}
-
-/// Refreshes the handoff target when a visible update notice loses and later
-/// regains focus. A status refresh is not involved in that user-driven path,
-/// so the source recorded when the notice was first shown is otherwise stale.
-pub fn update_notice_focus_changed(is_focused: bool) {
-    if !is_main_thread() {
-        let _ = run_on_main(move || update_notice_focus_changed(is_focused));
-        return;
-    }
-
-    if !is_focused {
-        // AppKit can publish the window event just before NSWorkspace switches
-        // its frontmost application. Sample on the next main-queue turn.
-        DispatchQueue::main().exec_async(|| {
-            let current = current_frontmost_if_not_captures();
-            let mut pending = PENDING_UPDATE_NOTICE_REFOCUS_TARGET
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let _ = notice_activation_source_after_focus_change(false, &mut pending, current);
-        });
-        return;
-    }
-
-    let current = current_frontmost_if_not_captures();
-    let next = {
-        let mut pending = PENDING_UPDATE_NOTICE_REFOCUS_TARGET
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        notice_activation_source_after_focus_change(true, &mut pending, current)
-    };
-    if let Some(next) = next {
-        let mut slot = FRONTMOST_APP_BEFORE_UPDATE_NOTICE
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *slot = next;
-    }
-}
-
-fn notice_activation_source_after_focus_change<T>(
-    is_focused: bool,
-    pending: &mut Option<Option<T>>,
-    current_external: Option<T>,
-) -> Option<Option<T>> {
-    if !is_focused {
-        *pending = Some(current_external);
-        return None;
-    }
-    let previous = pending.take()?;
-    Some(current_external.or(previous))
-}
-
-fn refresh_notice_activation_source_while_unfocused<T>(
-    pending: &mut Option<Option<T>>,
-    current_external: Option<T>,
-) {
-    if pending.is_some()
-        && let Some(current_external) = current_external
-    {
-        *pending = Some(Some(current_external));
-    }
-}
-
-/// Hides the interactive update notice and hands activation back to the app it
-/// covered. AppKit may make Preferences, history, or an editor key as the
-/// notice disappears; resign and order that donated window back before yielding
-/// so it cannot flash over the user's work.
-pub fn dismiss_update_notice(window: &WebviewWindow) -> Result<(), &'static str> {
-    if !is_main_thread() {
-        let window = window.clone();
-        return run_on_main(move || dismiss_update_notice(&window))
-            .ok_or("update notice dismissal did not run on the main thread")?;
-    }
-
-    let native = native_window(window)?;
-    let previous = {
-        let mut slot = FRONTMOST_APP_BEFORE_UPDATE_NOTICE
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        slot.take()
-    };
-    let handing_off = should_hand_off_update_notice_activation(
-        previous.is_some(),
-        previous.as_ref().is_some_and(|app| app.isTerminated()),
-    );
-    if native.isKeyWindow() {
-        native.resignKeyWindow();
-    }
-    // Resigning the notice donates key status and can raise Preferences.
-    push_donated_titled_document_behind(handing_off);
-    if window.hide().is_err() {
-        let mut slot = FRONTMOST_APP_BEFORE_UPDATE_NOTICE
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        *slot = previous;
-        native.makeKeyWindow();
-        return Err("failed to hide update notice");
-    }
-    // Hide can donate key again after the first resign. Push any titled
-    // document back before the async activation yield, or it stays on top for a
-    // frame.
-    push_donated_titled_document_behind(handing_off);
-    yield_activation_to(previous);
-    Ok(())
-}
-
 /// Flags that activate Captures without `ActivateAllWindows`.
 ///
 /// AppKit then brings only the key and main windows forward. Callers must make
@@ -3392,9 +3216,8 @@ mod tests {
         cursor_mode_is_interactive, cursor_mode_to_thumbnail_hover, cursor_surface_can_apply,
         cursor_surface_can_take_key_window_with_thumbnail_allowed, cursor_surface_uses_key_window,
         cursor_update_tracking_options, display_corner_radius_points, is_main_thread,
-        notice_activation_source_after_focus_change, parse_display_id, point_in_ns_rect,
-        pointer_tracking_options, reassert_thumbnail_cursor_after_click,
-        refresh_notice_activation_source_while_unfocused, shortcut_modifiers_pressed,
+        parse_display_id, point_in_ns_rect, pointer_tracking_options,
+        reassert_thumbnail_cursor_after_click, shortcut_modifiers_pressed,
         should_rearm_thumbnail_key_window, should_release_thumbnail_key_after_event,
         should_reset_cursor_on_exit, single_window_activation_options,
         style_mask_is_titled_document, surface_assumes_pointer_inside,
@@ -3407,48 +3230,6 @@ mod tests {
         assert!(
             !options.contains(objc2_app_kit::NSApplicationActivationOptions::ActivateAllWindows),
             "opening one editor must not lift every other Captures window over the user's apps",
-        );
-    }
-
-    #[test]
-    fn update_notice_refreshes_the_target_after_user_driven_refocus() {
-        let mut pending = None;
-        assert_eq!(
-            notice_activation_source_after_focus_change(false, &mut pending, Some("browser")),
-            None
-        );
-        assert_eq!(pending, Some(Some("browser")));
-        assert_eq!(
-            notice_activation_source_after_focus_change(true, &mut pending, None),
-            Some(Some("browser"))
-        );
-        assert_eq!(pending, None);
-
-        let mut switched_app_handoff = None;
-        assert_eq!(
-            notice_activation_source_after_focus_change(
-                false,
-                &mut switched_app_handoff,
-                Some("app-a"),
-            ),
-            None
-        );
-        refresh_notice_activation_source_while_unfocused(&mut switched_app_handoff, Some("app-b"));
-        refresh_notice_activation_source_while_unfocused(&mut switched_app_handoff, None);
-        assert_eq!(switched_app_handoff, Some(Some("app-b")));
-        assert_eq!(
-            notice_activation_source_after_focus_change(true, &mut switched_app_handoff, None),
-            Some(Some("app-b"))
-        );
-
-        let mut editor_handoff = None;
-        assert_eq!(
-            notice_activation_source_after_focus_change(false, &mut editor_handoff, None::<&str>),
-            None
-        );
-        assert_eq!(
-            notice_activation_source_after_focus_change(true, &mut editor_handoff, None),
-            Some(None)
         );
     }
 

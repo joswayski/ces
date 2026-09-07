@@ -191,10 +191,6 @@ pub fn run() {
                         updates::restore_update_notice(window.app_handle());
                     }
                 }
-                #[cfg(target_os = "macos")]
-                tauri::WindowEvent::Focused(focused) if window.label() == "update" => {
-                    captures_macos_window::update_notice_focus_changed(*focused);
-                }
                 _ => {}
             }
         })
