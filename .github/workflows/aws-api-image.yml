@@ -12,13 +12,6 @@ jobs:
   api-arm64:
     name: linux/arm64 API image
     runs-on: ubuntu-24.04-arm
-    permissions:
-      contents: read
-      id-token: write
-    env:
-      AWS_REGION: us-east-1
-      ECR_REGISTRY: 395451633568.dkr.ecr.us-east-1.amazonaws.com
-      ECR_REPOSITORY: production/captures
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -67,32 +60,77 @@ jobs:
             test "$(docker exec captures-db-test psql -U captures_test -Atc \
               "SELECT count(*) FROM pg_stat_activity WHERE application_name='migration'")" = 0
           done
-      - name: Configure AWS credentials
+      - name: Export verified API image
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: docker save --output "$RUNNER_TEMP/captures-api.tar" captures-api:test
+      - name: Upload verified API image
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: captures-api-image
+          path: ${{ runner.temp }}/captures-api.tar
+          retention-days: 1
+          compression-level: 0
+
+  publish-ecr:
+    name: Publish immutable API image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [api-arm64]
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: us-east-1
+      ECR_REGISTRY: 395451633568.dkr.ecr.us-east-1.amazonaws.com
+      ECR_REPOSITORY: production/captures
+    steps:
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
           role-to-assume: arn:aws:iam::395451633568:role/production-captures-ecr-publisher
           role-session-name: captures-api-ecr-${{ github.run_id }}
           aws-region: ${{ env.AWS_REGION }}
           allowed-account-ids: "395451633568"
+      - name: Check for an existing immutable tag
+        id: existing
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="api-${GITHUB_SHA}"
+          digest="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+            --query "imageDetails[?imageTags && contains(imageTags, '${tag}')].imageDigest | [0]" \
+            --output json | jq -r '. // empty')"
+          if [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            printf 'exists=true\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'exists=false\n' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Download verified API image
+        if: steps.existing.outputs.exists != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: captures-api-image
+          path: ${{ runner.temp }}
+      - name: Load verified API image
+        if: steps.existing.outputs.exists != 'true'
+        run: docker load --input "$RUNNER_TEMP/captures-api.tar"
       - name: Log in to Amazon ECR
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: steps.existing.outputs.exists != 'true'
         uses: aws-actions/amazon-ecr-login@v2.1.6
+      - name: Publish verified immutable API image
+        if: steps.existing.outputs.exists != 'true'
+        run: |
+          set -euo pipefail
+          image="${ECR_REGISTRY}/${ECR_REPOSITORY}:api-${GITHUB_SHA}"
+          docker tag captures-api:test "$image"
+          docker push "$image"
       - name: Publish tested immutable API image
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
           tag="api-${GITHUB_SHA}"
           image="${ECR_REGISTRY}/${ECR_REPOSITORY}:${tag}"
-          # Listing failure is an error, not permission to overwrite an immutable tag.
-          existing="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
-            --query "imageDetails[?imageTags && contains(imageTags, '${tag}')].imageDigest | [0]" \
-            --output json | jq -r '. // empty')"
-          if [[ ! "$existing" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            docker tag captures-api:test "$image"
-            docker push "$image"
-          fi
           digest="$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
             --image-ids "imageTag=$tag" --query 'imageDetails[0].imageDigest' --output text)"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
