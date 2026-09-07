@@ -156,7 +156,7 @@ describe("thumbnail stack layout", () => {
     expect(thumbnailStyles).toMatch(/translate:\s*0 calc\(/);
     expect(thumbnailStyles).toMatch(/html:has\(\.thumbnail-stack\)[\s\S]*?overflow:\s*hidden/);
     expect(thumbnailStyles).toMatch(
-      /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-expand-sign, 1\)/,
+      /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-gravity, 1\)/,
     );
     expect(compactCard?.[1]).toMatch(/--thumbnail-stack-hover-transform/);
     expect(compactCard?.[1]).toMatch(/rotateZ\(0deg\)/);
@@ -307,17 +307,24 @@ describe("thumbnail stack layout", () => {
       contentHeight: 240,
     })).toBeCloseTo(1);
     expect(thumbnailStackGravityFromWorkArea({
-      pileBottom: 240,
+      pileBottom: 264,
       workTop: 0,
       workHeight: 1_040,
-      contentHeight: 240,
+      contentHeight: 264,
     })).toBeCloseTo(-1);
+
+    expect(thumbnailStackGravityFromWorkArea({
+      pileBottom: 652,
+      workTop: 0,
+      workHeight: 1_040,
+      contentHeight: 264,
+    })).toBeCloseTo(0);
 
     const stack = document.createElement("main");
     applyThumbnailStackGravity(stack, -0.42);
     expect(stack.style.getPropertyValue(THUMBNAIL_STACK_GRAVITY_VAR)).toBe("-0.42");
     expect(thumbnailStyles).toMatch(
-      /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-expand-sign, 1\)/,
+      /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-gravity, 1\)/,
     );
     expect(thumbnailStyles).not.toMatch(/--thumbnail-stack-skew-y/);
   });
@@ -746,7 +753,7 @@ describe("thumbnail stack layout", () => {
     expect(envelope(6)).toBeLessThan(envelope(2));
     expect(Math.abs(thumbnailStackPeekJitterPx(6))).toBeLessThanOrEqual(envelope(6) + 1e-12);
     expect(thumbnailStyles).toMatch(
-      /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-expand-sign, 1\)\s*\+\s*var\(--thumbnail-stack-peek-jitter, 0px\)/,
+      /var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\* var\(--thumbnail-stack-gravity, 1\)\s*\+\s*var\(--thumbnail-stack-peek-jitter, 0px\)/,
     );
   });
 

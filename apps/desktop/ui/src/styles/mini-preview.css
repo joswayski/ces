@@ -38,8 +38,9 @@ body:has(.thumbnail-stack),
     0 6px 14px rgba(0, 0, 0, 0.38),
     0 2px 5px rgba(0, 0, 0, 0.26);
   /*
-   * Signed gravity from JS chooses when the pile changes anchor. The discrete
-   * expand sign keeps the card spacing full-sized while the frame is moving.
+   * Signed gravity from JS brings the collapsed layers together around the
+   * vertical midpoint. The discrete expand sign still chooses which way the
+   * full-size list opens after the anchor changes.
    */
   --thumbnail-stack-gravity: 1;
   --thumbnail-stack-expand-sign: 1;
@@ -2159,7 +2160,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
       calc(var(--thumbnail-stack-pile-depth, 0) * -0.8px),
       calc(
         var(--thumbnail-stack-pile-depth, 0) * -13px
-          * var(--thumbnail-stack-expand-sign, 1)
+          * var(--thumbnail-stack-gravity, 1)
         + var(--thumbnail-stack-peek-jitter, 0px)
       ),
       calc(var(--thumbnail-stack-pile-depth, 0) * -24px)
@@ -2177,7 +2178,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
       calc(var(--thumbnail-stack-pile-depth, 0) * -0.6px),
       calc(
         var(--thumbnail-stack-pile-depth, 0) * -16px
-          * var(--thumbnail-stack-expand-sign, 1)
+          * var(--thumbnail-stack-gravity, 1)
         + var(--thumbnail-stack-peek-jitter, 0px)
       ),
       calc(var(--thumbnail-stack-pile-depth, 0) * -18px)
@@ -2593,7 +2594,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
       ),
       calc(
         var(--thumbnail-stack-pile-depth, 0) * -16px
-          * var(--thumbnail-stack-expand-sign, 1)
+          * var(--thumbnail-stack-gravity, 1)
         + var(--thumbnail-stack-peek-jitter, 0px)
         + var(--thumbnail-drag-sway-y, 0) * 1px * var(--thumbnail-stack-pile-depth, 0) * 0.2
       ),
