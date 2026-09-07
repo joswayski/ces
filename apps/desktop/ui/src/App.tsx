@@ -7597,7 +7597,7 @@ export function Thumbnail() {
           />
         )}
       </main>
-      {!collapsed && (
+      {!collapsed && livePreviewCount >= 2 && (
         <div className={[
           "thumbnail-stack-toolbar",
           stackAnchor === "top" ? "thumbnail-stack-toolbar-anchor-top" : "",
