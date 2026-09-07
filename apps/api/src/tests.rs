@@ -541,6 +541,13 @@ async fn postgres_account_and_webhook_regressions() {
         first.expect("first concurrent startup migration");
         second.expect("second concurrent startup migration");
         let pool = crate::connect(&test_url).await?;
+        let search_path: String = sqlx::query_scalar("SHOW search_path")
+            .fetch_one(&pool)
+            .await?;
+        assert!(
+            !search_path.contains("captures"),
+            "runtime must not depend on the migration search_path: {search_path}"
+        );
         let public_tables: i64 = sqlx::query_scalar(
             "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'",
         )
