@@ -18,7 +18,8 @@ use std::{
 use tauri::CursorIcon;
 
 use captures_capture::{
-    CaptureError, CaptureMode, DisplayFrame, LogicalRect, PhysicalRect, WindowDescriptor,
+    CaptureError, CaptureMode, CursorImage, DisplayFrame, LogicalRect, PhysicalRect, PointerCursor,
+    WindowDescriptor,
 };
 use chrono::{DateTime, Utc};
 use image::RgbaImage;
@@ -720,17 +721,17 @@ async fn prepare_capture(
             return Ok(None);
         }
         ensure_capture_session_available()?;
-        let (pointer, mut frame) = if countdown_seconds > 0 {
+        let (cursor, mut frame) = if countdown_seconds > 0 {
             discard_prefetched_freeze_frame();
-            let pointer = pointer_position();
-            (pointer, state.backend.capture_display(&display.id)?)
+            let cursor = pointer_cursor();
+            (cursor, state.backend.capture_display(&display.id)?)
         } else {
             take_prefetched_freeze_matching_display(&state, &display.id)?
         };
         apply_screenshot_cursor(
             &mut frame.image,
             &frame.descriptor,
-            pointer,
+            cursor.as_ref(),
             state.settings().show_cursor_in_screenshots,
         );
         if capture_flow_was_cancelled(flow) {
@@ -764,12 +765,14 @@ async fn prepare_capture(
     let windows_task =
         (mode == CaptureMode::Window).then(|| take_prefetched_or_spawn_windows(&state));
     let (session, pending_windows) = if freeze_screen {
-        let PrefetchedFreezeFrame { pointer, frame } = match prefetched {
+        let PrefetchedFreezeFrame { cursor, frame } = match prefetched {
             Some(frame) => frame,
             None => {
-                let pointer = pointer_position();
-                let frame = state.backend.capture_display_at_point(pointer)?;
-                PrefetchedFreezeFrame { pointer, frame }
+                let cursor = pointer_cursor();
+                let frame = state
+                    .backend
+                    .capture_display_at_point(cursor.as_ref().map(|cursor| cursor.position))?;
+                PrefetchedFreezeFrame { cursor, frame }
             }
         };
         // The background frame is frozen now, so this capture no longer needs HUD
@@ -781,12 +784,9 @@ async fn prepare_capture(
         if includes_capture_ui {
             recording::dismiss_capture_menu_after_nested_snapshot(&app, &state);
         }
-        let snapshot_png = encode_overlay_snapshot_with_cursor(
-            &frame.image,
-            &frame.descriptor,
-            pointer,
-            state.settings().show_cursor_in_screenshots,
-        )?;
+        // The real system cursor remains visible over the frozen selector.
+        // Baking another cursor into this preview would display it twice.
+        let snapshot_png = storage::encode_overlay_snapshot(&frame.image)?;
         let (targets, pending_windows) =
             take_ready_or_defer_windows(windows_task, &frame.descriptor, Some(&frame.image));
         (
@@ -799,7 +799,7 @@ async fn prepare_capture(
                 image: Some(frame.image),
                 snapshot_png,
                 windows: targets.windows,
-                cursor: pointer,
+                cursor,
                 shell_chrome: targets.shell_chrome,
                 windows_ready: pending_windows.is_none(),
                 includes_capture_ui,
@@ -872,7 +872,7 @@ pub(crate) type WindowListTask = std::thread::JoinHandle<Result<Vec<WindowDescri
 static PENDING_WINDOW_LIST: Mutex<Option<WindowListTask>> = Mutex::new(None);
 
 pub(crate) struct PrefetchedFreezeFrame {
-    pub pointer: Option<(i32, i32)>,
+    pub cursor: Option<PointerCursor>,
     pub frame: DisplayFrame,
 }
 
@@ -947,8 +947,11 @@ fn prefetch_freeze_frame(app: &AppHandle, state: &Arc<AppState>, claim_region_cu
         }
         let had_visible_hud = conceal_capture_chrome_for_snapshot(&app);
         settle_concealed_capture_chrome(had_visible_hud || include_capture_ui);
-        let pointer = pointer_position();
-        let frame = match state.backend.capture_display_at_point(pointer) {
+        let cursor = pointer_cursor();
+        let frame = match state
+            .backend
+            .capture_display_at_point(cursor.as_ref().map(|cursor| cursor.position))
+        {
             Ok(frame) => frame,
             Err(error) => {
                 restore_prefetched_freeze_chrome(&app);
@@ -964,7 +967,7 @@ fn prefetch_freeze_frame(app: &AppHandle, state: &Arc<AppState>, claim_region_cu
         if claim_region_cursor {
             claim_region_capture_cursor(&app);
         }
-        Ok(PrefetchedFreezeFrame { pointer, frame })
+        Ok(PrefetchedFreezeFrame { cursor, frame })
     }));
 }
 
@@ -991,22 +994,24 @@ pub(crate) fn take_prefetched_or_capture_freeze_frame(
     if let Some(frame) = take_prefetched_freeze_frame() {
         return Ok(frame);
     }
-    let pointer = pointer_position();
-    let frame = state.backend.capture_display_at_point(pointer)?;
-    Ok(PrefetchedFreezeFrame { pointer, frame })
+    let cursor = pointer_cursor();
+    let frame = state
+        .backend
+        .capture_display_at_point(cursor.as_ref().map(|cursor| cursor.position))?;
+    Ok(PrefetchedFreezeFrame { cursor, frame })
 }
 
 fn take_prefetched_freeze_matching_display(
     state: &Arc<AppState>,
     display_id: &str,
-) -> Result<(Option<(i32, i32)>, DisplayFrame), AppError> {
+) -> Result<(Option<PointerCursor>, DisplayFrame), AppError> {
     if let Some(prefetched) = take_prefetched_freeze_frame()
         && prefetched.frame.descriptor.id == display_id
     {
-        return Ok((prefetched.pointer, prefetched.frame));
+        return Ok((prefetched.cursor, prefetched.frame));
     }
-    let pointer = pointer_position();
-    Ok((pointer, state.backend.capture_display(display_id)?))
+    let cursor = pointer_cursor();
+    Ok((cursor, state.backend.capture_display(display_id)?))
 }
 
 pub(crate) fn freeze_prefetch_is_pending() -> bool {
@@ -1419,7 +1424,7 @@ async fn commit_region(
                     &session.display,
                     source,
                     rect,
-                    session.cursor,
+                    session.cursor.as_ref(),
                     state.settings().show_cursor_in_screenshots,
                 );
                 Ok(image)
@@ -1541,7 +1546,7 @@ async fn commit_window(
                     &session.display,
                     source,
                     &selected_window,
-                    session.cursor,
+                    session.cursor.as_ref(),
                     state.settings().show_cursor_in_screenshots,
                 );
                 Some(image)
@@ -1552,7 +1557,7 @@ async fn commit_window(
                     &mut image,
                     &selected_window,
                     session.display.scale_factor,
-                    session.cursor,
+                    session.cursor.as_ref(),
                     state.settings().show_cursor_in_screenshots,
                 );
                 Ok(image)
@@ -1650,7 +1655,7 @@ async fn commit_display(
                 apply_screenshot_cursor(
                     &mut image,
                     &session.display,
-                    session.cursor,
+                    session.cursor.as_ref(),
                     state.settings().show_cursor_in_screenshots,
                 );
                 image
@@ -1690,12 +1695,12 @@ async fn commit_display(
 
 fn capture_live_display(state: &AppState, display_id: &str) -> Result<RgbaImage, AppError> {
     ensure_capture_session_available()?;
-    let pointer = pointer_position();
+    let cursor = pointer_cursor();
     let mut frame = state.backend.capture_display(display_id)?;
     apply_screenshot_cursor(
         &mut frame.image,
         &frame.descriptor,
-        pointer,
+        cursor.as_ref(),
         state.settings().show_cursor_in_screenshots,
     );
     Ok(frame.image)
@@ -3934,7 +3939,7 @@ pub(crate) fn pick_display_under_pointer(
 fn apply_screenshot_cursor(
     image: &mut RgbaImage,
     display: &captures_capture::DisplayDescriptor,
-    pointer: Option<(i32, i32)>,
+    cursor: Option<&PointerCursor>,
     enabled: bool,
 ) {
     apply_screenshot_cursor_in_crop(
@@ -3944,22 +3949,9 @@ fn apply_screenshot_cursor(
         0,
         image.width(),
         image.height(),
-        pointer,
+        cursor,
         enabled,
     );
-}
-
-/// Encode an overlay-only copy so the frozen selector reflects the cursor
-/// setting without baking that glyph into the source used for the final crop.
-pub(crate) fn encode_overlay_snapshot_with_cursor(
-    image: &RgbaImage,
-    display: &captures_capture::DisplayDescriptor,
-    pointer: Option<(i32, i32)>,
-    enabled: bool,
-) -> Result<Vec<u8>, AppError> {
-    let mut snapshot = image.clone();
-    apply_screenshot_cursor(&mut snapshot, display, pointer, enabled);
-    storage::encode_overlay_snapshot(&snapshot)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -3970,13 +3962,13 @@ fn apply_screenshot_cursor_in_crop(
     crop_y: u32,
     source_width: u32,
     source_height: u32,
-    pointer: Option<(i32, i32)>,
+    cursor: Option<&PointerCursor>,
     enabled: bool,
 ) {
     if !enabled {
         return;
     }
-    let Some(pointer) = pointer else {
+    let Some(cursor) = cursor else {
         return;
     };
     captures_capture::overlay_pointer_cursor_in_crop(
@@ -3986,7 +3978,7 @@ fn apply_screenshot_cursor_in_crop(
         crop_y,
         source_width,
         source_height,
-        pointer,
+        cursor,
         captures_capture::screenshot_pointer_scale(display.scale_factor),
     );
 }
@@ -3996,7 +3988,7 @@ fn apply_screenshot_cursor_to_region(
     display: &captures_capture::DisplayDescriptor,
     source: &RgbaImage,
     rect: LogicalRect,
-    pointer: Option<(i32, i32)>,
+    cursor: Option<&PointerCursor>,
     enabled: bool,
 ) {
     let Ok(physical) = region_physical_rect(display, source, rect) else {
@@ -4009,7 +4001,7 @@ fn apply_screenshot_cursor_to_region(
         physical.y,
         source.width(),
         source.height(),
-        pointer,
+        cursor,
         enabled,
     );
 }
@@ -4019,7 +4011,7 @@ fn apply_screenshot_cursor_to_window_crop(
     display: &captures_capture::DisplayDescriptor,
     source: &RgbaImage,
     window: &captures_capture::WindowDescriptor,
-    pointer: Option<(i32, i32)>,
+    cursor: Option<&PointerCursor>,
     enabled: bool,
 ) {
     let Some(physical) = window_physical_rect(display, source, window) else {
@@ -4032,7 +4024,7 @@ fn apply_screenshot_cursor_to_window_crop(
         physical.y,
         source.width(),
         source.height(),
-        pointer,
+        cursor,
         enabled,
     );
 }
@@ -4041,21 +4033,47 @@ fn apply_screenshot_cursor_on_window(
     image: &mut RgbaImage,
     window: &captures_capture::WindowDescriptor,
     display_scale_factor: f64,
-    pointer: Option<(i32, i32)>,
+    cursor: Option<&PointerCursor>,
     enabled: bool,
 ) {
     if !enabled {
         return;
     }
-    let Some(pointer) = pointer else {
+    let Some(cursor) = cursor else {
         return;
     };
     captures_capture::overlay_pointer_cursor_on_window(
         image,
         window,
-        pointer,
+        cursor,
         captures_capture::screenshot_pointer_scale(display_scale_factor),
     );
+}
+
+fn pointer_cursor() -> Option<PointerCursor> {
+    let position = pointer_position()?;
+    Some(PointerCursor {
+        position,
+        image: native_cursor_image(),
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn native_cursor_image() -> Option<CursorImage> {
+    let cursor = captures_macos_window::system_cursor_image()?;
+    let pixels = image::load_from_memory(&cursor.tiff).ok()?.to_rgba8();
+    Some(CursorImage {
+        pixels,
+        logical_width: cursor.logical_width,
+        logical_height: cursor.logical_height,
+        hot_spot_x: cursor.hot_spot_x,
+        hot_spot_y: cursor.hot_spot_y,
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+const fn native_cursor_image() -> Option<CursorImage> {
+    None
 }
 
 fn pointer_position() -> Option<(i32, i32)> {
@@ -8039,7 +8057,7 @@ fn crop_live_region(
     rect: LogicalRect,
 ) -> Result<RgbaImage, AppError> {
     ensure_capture_session_available()?;
-    let pointer = pointer_position();
+    let cursor = pointer_cursor();
     let frame = state.backend.capture_display(display_id)?;
     let mut image = crop_region_from_display(&frame.descriptor, &frame.image, rect)?;
     apply_screenshot_cursor_to_region(
@@ -8047,7 +8065,7 @@ fn crop_live_region(
         &frame.descriptor,
         &frame.image,
         rect,
-        pointer,
+        cursor.as_ref(),
         state.settings().show_cursor_in_screenshots,
     );
     Ok(image)
@@ -8104,7 +8122,7 @@ fn capture_live_window(
     resolve_window_capture(
         display_crop_is_safe,
         || {
-            let pointer = pointer_position();
+            let cursor = pointer_cursor();
             state
                 .backend
                 .capture_display(&current_window.display_id)
@@ -8117,14 +8135,14 @@ fn capture_live_window(
                         &frame.descriptor,
                         &frame.image,
                         &current_window,
-                        pointer,
+                        cursor.as_ref(),
                         state.settings().show_cursor_in_screenshots,
                     );
                     Some(image)
                 })
         },
         || {
-            let pointer = pointer_position();
+            let cursor = pointer_cursor();
             let mut image = state.backend.capture_window(&current_window.id)?;
             apply_screenshot_cursor_on_window(
                 &mut image,
@@ -8139,7 +8157,7 @@ fn capture_live_window(
                     })
                     .map(|display| display.scale_factor)
                     .unwrap_or(1.0),
-                pointer,
+                cursor.as_ref(),
                 state.settings().show_cursor_in_screenshots,
             );
             Ok(image)
@@ -8816,10 +8834,9 @@ mod tests {
         ThumbnailStackOrigin, ThumbnailWindowFrame, ThumbnailWindowGeometry, app_reactivation,
         capturable_windows_for_display, capture_cursor_icon, classify_preview_file_drop,
         click_through_applies, clipboard_fingerprint, display_contains_pointer,
-        drag_plugin_cursor_to_pointer_space, encode_overlay_snapshot_with_cursor,
-        fallback_startup_notice, freeze_prefetch_can_start, interactive_launch_action,
-        mask_macos_window_corners, parse_shortcut, place_startup_notice, preferences_url,
-        primary_app_window_priority, recording::RECORDING_REGION_INDICATOR_TITLE,
+        drag_plugin_cursor_to_pointer_space, fallback_startup_notice, freeze_prefetch_can_start,
+        interactive_launch_action, mask_macos_window_corners, parse_shortcut, place_startup_notice,
+        preferences_url, primary_app_window_priority, recording::RECORDING_REGION_INDICATOR_TITLE,
         recording_chrome_should_restore_after_snapshot, refine_window_chrome_from_snapshot,
         resolve_startup_notice_placement, resolve_window_capture,
         screenshot_countdown_seconds_for_capture_ui, should_claim_region_cursor_after_freeze,
@@ -10942,20 +10959,6 @@ mod tests {
             scale_factor: 2.0,
             is_primary: true,
         }
-    }
-
-    #[test]
-    fn overlay_snapshot_shows_the_cursor_without_mutating_the_capture_source() {
-        let source = RgbaImage::from_pixel(100, 100, Rgba([0, 0, 0, 255]));
-        let snapshot =
-            encode_overlay_snapshot_with_cursor(&source, &test_display(), Some((10, 12)), true)
-                .expect("snapshot encoded");
-        let decoded = image::load_from_memory(&snapshot)
-            .expect("snapshot decoded")
-            .to_rgba8();
-
-        assert!(decoded.pixels().any(|pixel| pixel.0 == [24, 24, 24, 255]));
-        assert!(source.pixels().all(|pixel| pixel.0 == [0, 0, 0, 255]));
     }
 
     #[test]

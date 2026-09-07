@@ -19,6 +19,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
     "NSEvent",
     "NSGraphics",
     "NSGraphicsContext",
+    "NSImage",
     "NSPanel",
     "NSPasteboard",
     "NSResponder",
@@ -32,6 +33,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
     "std",
+    "NSData",
     "NSDictionary",
     "NSGeometry",
     "NSNotification",
