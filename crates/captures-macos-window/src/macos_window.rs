@@ -2871,11 +2871,10 @@ pub fn resize_from_top(
 
 /// Moves the mini-preview frame before returning to the drag handler.
 ///
-/// Tauri's macOS position setter dispatches every update asynchronously to
-/// AppKit. During a fast drag those queued positions can fall far behind the
-/// pointer, while the webview has already changed the pile direction for the
-/// newest requested position. Apply the origin directly on AppKit's main
-/// thread so each acknowledged move is already visible to the next sample.
+/// Collapsed previews can retain a tall WebView to avoid blanking its surviving
+/// cards. The caller keeps this frame inside the work area and positions the
+/// visible pile within it; applying the accepted origin synchronously keeps the
+/// DOM's local pile position paired with the same native drag sample.
 pub fn move_thumbnail_frame(window: &WebviewWindow, x: f64, y: f64) -> Result<(), &'static str> {
     if !is_main_thread() {
         let window = window.clone();
