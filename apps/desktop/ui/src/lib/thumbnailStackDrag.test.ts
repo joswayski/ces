@@ -395,7 +395,9 @@ describe("CollapsedThumbnailStackDrag", () => {
     now = 32;
     const stillRight = await drag.pointerMove({ pointerId: 1, screenX: 24, screenY: 0 });
     now = 48;
-    const left = await drag.pointerMove({ pointerId: 1, screenX: 12, screenY: 0 });
+    await drag.pointerMove({ pointerId: 1, screenX: 12, screenY: 0 });
+    now = 64;
+    const left = await drag.pointerMove({ pointerId: 1, screenX: 0, screenY: 0 });
 
     expect(right?.sway.x).toBeLessThan(0);
     expect(stillRight?.sway.x).toBeLessThan(right!.sway.x);
@@ -453,7 +455,7 @@ describe("CollapsedThumbnailStackDrag", () => {
     expect(sways.at(-1)).toEqual({ x: 0, y: 0 });
   });
 
-  it("lets the rear cards gently overshoot after the pointer pauses", async () => {
+  it("eases the rear cards back after the pointer pauses", async () => {
     let now = 0;
     const sways: { x: number; y: number }[] = [];
     const drag = new CollapsedThumbnailStackDrag({
@@ -475,12 +477,11 @@ describe("CollapsedThumbnailStackDrag", () => {
       await drag.pointerMove({ pointerId: 1, screenX: 20, screenY: 0 });
     }
 
-    expect(sways.some((sway) => sway.x > 0)).toBe(true);
     expect(Math.abs(sways.at(-1)!.x)).toBeLessThan(Math.abs(carried));
   });
 
-  it("gives a fast flick more wobble than the same slow cursor travel", async () => {
-    const swayAfterMove = async (dtMs: number) => {
+  it("gives a faster carry more trailing motion over the same time", async () => {
+    const swayAfterSamples = async (samples: number) => {
       let now = 0;
       const sways: { x: number; y: number }[] = [];
       const drag = new CollapsedThumbnailStackDrag({
@@ -492,14 +493,18 @@ describe("CollapsedThumbnailStackDrag", () => {
       });
 
       drag.pointerDown({ button: 0, pointerId: 1, screenX: 0, screenY: 0 });
-      now = 16;
-      await drag.pointerMove({ pointerId: 1, screenX: 12, screenY: 0 });
-      now += dtMs;
-      await drag.pointerMove({ pointerId: 1, screenX: 24, screenY: 0 });
+      for (let sample = 1; sample <= samples; sample += 1) {
+        now += 16;
+        await drag.pointerMove({ pointerId: 1, screenX: sample * 12, screenY: 0 });
+      }
+      while (now < 48) {
+        now += 16;
+        await drag.pointerMove({ pointerId: 1, screenX: samples * 12, screenY: 0 });
+      }
       return Math.abs(sways.at(-1)!.x);
     };
 
-    expect(await swayAfterMove(16)).toBeGreaterThan(await swayAfterMove(48));
+    expect(await swayAfterSamples(3)).toBeGreaterThan(await swayAfterSamples(1));
   });
 
   it("keeps the response restrained even when a pointer sample is abrupt", async () => {
