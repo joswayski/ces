@@ -15,7 +15,7 @@
     "install:preview": "node scripts/install-latest-release.mjs",
     "build:web": "npm run build --workspace @captures/web",
     "start:web": "npm run start --workspace @captures/web",
-    "check": "npm run test:release-version && npm run check --workspace @captures/desktop && npm test --workspace @captures/web && npm run build:web",
+    "check": "npm run test:release-version && npm run check --workspace @captures/desktop && npm test --workspace @captures/web && npm run build:web && npm run test:accounts --workspace @captures/web",
     "test:release-version": "node --test scripts/*.test.mjs",
     "test": "npm run test --workspace @captures/desktop"
   },

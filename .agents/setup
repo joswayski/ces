@@ -32,6 +32,7 @@ packages=(
   libxrandr-dev
   nasm
   pkg-config
+  postgresql
   wget
   xz-utils
   yasm

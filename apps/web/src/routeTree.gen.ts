@@ -10,13 +10,23 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AccountRouteImport } from './routes/account'
 import { Route as ApiFeedbackRouteImport } from './routes/api/feedback'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiAccountMeRouteImport } from './routes/api/account/me'
+import { Route as ApiAuthCallbackRouteImport } from './routes/api/auth/callback'
+import { Route as ApiAuthSignInRouteImport } from './routes/api/auth/sign-in'
+import { Route as ApiAuthSignOutRouteImport } from './routes/api/auth/sign-out'
 import { Route as ApiUpdatesPreviewRouteImport } from './routes/api/updates/preview'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiFeedbackRoute = ApiFeedbackRouteImport.update({
@@ -29,6 +39,26 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAccountMeRoute = ApiAccountMeRouteImport.update({
+  id: '/api/account/me',
+  path: '/api/account/me',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthCallbackRoute = ApiAuthCallbackRouteImport.update({
+  id: '/api/auth/callback',
+  path: '/api/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthSignInRoute = ApiAuthSignInRouteImport.update({
+  id: '/api/auth/sign-in',
+  path: '/api/auth/sign-in',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthSignOutRoute = ApiAuthSignOutRouteImport.update({
+  id: '/api/auth/sign-out',
+  path: '/api/auth/sign-out',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiUpdatesPreviewRoute = ApiUpdatesPreviewRouteImport.update({
   id: '/api/updates/preview',
   path: '/api/updates/preview',
@@ -37,36 +67,83 @@ const ApiUpdatesPreviewRoute = ApiUpdatesPreviewRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/api/feedback': typeof ApiFeedbackRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/account/me': typeof ApiAccountMeRoute
+  '/api/auth/callback': typeof ApiAuthCallbackRoute
+  '/api/auth/sign-in': typeof ApiAuthSignInRoute
+  '/api/auth/sign-out': typeof ApiAuthSignOutRoute
   '/api/updates/preview': typeof ApiUpdatesPreviewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/api/feedback': typeof ApiFeedbackRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/account/me': typeof ApiAccountMeRoute
+  '/api/auth/callback': typeof ApiAuthCallbackRoute
+  '/api/auth/sign-in': typeof ApiAuthSignInRoute
+  '/api/auth/sign-out': typeof ApiAuthSignOutRoute
   '/api/updates/preview': typeof ApiUpdatesPreviewRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/api/feedback': typeof ApiFeedbackRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/account/me': typeof ApiAccountMeRoute
+  '/api/auth/callback': typeof ApiAuthCallbackRoute
+  '/api/auth/sign-in': typeof ApiAuthSignInRoute
+  '/api/auth/sign-out': typeof ApiAuthSignOutRoute
   '/api/updates/preview': typeof ApiUpdatesPreviewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/feedback' | '/api/health' | '/api/updates/preview'
+  fullPaths:
+    | '/'
+    | '/account'
+    | '/api/feedback'
+    | '/api/health'
+    | '/api/account/me'
+    | '/api/auth/callback'
+    | '/api/auth/sign-in'
+    | '/api/auth/sign-out'
+    | '/api/updates/preview'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/feedback' | '/api/health' | '/api/updates/preview'
+  to:
+    | '/'
+    | '/account'
+    | '/api/feedback'
+    | '/api/health'
+    | '/api/account/me'
+    | '/api/auth/callback'
+    | '/api/auth/sign-in'
+    | '/api/auth/sign-out'
+    | '/api/updates/preview'
   id:
-    '__root__' | '/' | '/api/feedback' | '/api/health' | '/api/updates/preview'
+    | '__root__'
+    | '/'
+    | '/account'
+    | '/api/feedback'
+    | '/api/health'
+    | '/api/account/me'
+    | '/api/auth/callback'
+    | '/api/auth/sign-in'
+    | '/api/auth/sign-out'
+    | '/api/updates/preview'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountRoute: typeof AccountRoute
   ApiFeedbackRoute: typeof ApiFeedbackRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiAccountMeRoute: typeof ApiAccountMeRoute
+  ApiAuthCallbackRoute: typeof ApiAuthCallbackRoute
+  ApiAuthSignInRoute: typeof ApiAuthSignInRoute
+  ApiAuthSignOutRoute: typeof ApiAuthSignOutRoute
   ApiUpdatesPreviewRoute: typeof ApiUpdatesPreviewRoute
 }
 
@@ -77,6 +154,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/feedback': {
@@ -93,6 +177,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/account/me': {
+      id: '/api/account/me'
+      path: '/api/account/me'
+      fullPath: '/api/account/me'
+      preLoaderRoute: typeof ApiAccountMeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/callback': {
+      id: '/api/auth/callback'
+      path: '/api/auth/callback'
+      fullPath: '/api/auth/callback'
+      preLoaderRoute: typeof ApiAuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/sign-in': {
+      id: '/api/auth/sign-in'
+      path: '/api/auth/sign-in'
+      fullPath: '/api/auth/sign-in'
+      preLoaderRoute: typeof ApiAuthSignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/sign-out': {
+      id: '/api/auth/sign-out'
+      path: '/api/auth/sign-out'
+      fullPath: '/api/auth/sign-out'
+      preLoaderRoute: typeof ApiAuthSignOutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/updates/preview': {
       id: '/api/updates/preview'
       path: '/api/updates/preview'
@@ -105,8 +217,13 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountRoute: AccountRoute,
   ApiFeedbackRoute: ApiFeedbackRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiAccountMeRoute: ApiAccountMeRoute,
+  ApiAuthCallbackRoute: ApiAuthCallbackRoute,
+  ApiAuthSignInRoute: ApiAuthSignInRoute,
+  ApiAuthSignOutRoute: ApiAuthSignOutRoute,
   ApiUpdatesPreviewRoute: ApiUpdatesPreviewRoute,
 }
 export const routeTree = rootRouteImport
@@ -114,10 +231,11 @@ export const routeTree = rootRouteImport
   ._addFileTypes<FileRouteTypes>()
 
 import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
+import type { startInstance } from './start.ts'
 declare module '@tanstack/react-start' {
   interface Register {
     ssr: true
     router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
   }
 }

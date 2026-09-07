@@ -18,6 +18,31 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
+  accounts:
+    name: Account database and API image
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: 1.94.0
+      - run: cargo test -p captures-api -- --include-ignored
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
+      - run: docker build -f apps/api/Dockerfile -t captures-api:test .
+
   rust:
     name: Rust checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
