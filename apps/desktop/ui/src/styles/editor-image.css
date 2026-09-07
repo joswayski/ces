@@ -743,6 +743,9 @@
 .screenshot-canvas.tool-ellipse,
 .screenshot-canvas.tool-line,
 .screenshot-canvas.tool-arrow,
+.screenshot-canvas.tool-triangle,
+.screenshot-canvas.tool-diamond,
+.screenshot-canvas.tool-star,
 .screenshot-canvas.tool-pen {
   cursor: crosshair;
 }
@@ -754,6 +757,9 @@
 .screenshot-canvas-viewport:has(.screenshot-canvas.tool-ellipse),
 .screenshot-canvas-viewport:has(.screenshot-canvas.tool-line),
 .screenshot-canvas-viewport:has(.screenshot-canvas.tool-arrow),
+.screenshot-canvas-viewport:has(.screenshot-canvas.tool-triangle),
+.screenshot-canvas-viewport:has(.screenshot-canvas.tool-diamond),
+.screenshot-canvas-viewport:has(.screenshot-canvas.tool-star),
 .screenshot-canvas-viewport:has(.screenshot-canvas.tool-pen) {
   cursor: crosshair;
 }

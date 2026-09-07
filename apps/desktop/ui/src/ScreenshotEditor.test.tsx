@@ -461,6 +461,17 @@ describe("ScreenshotEditor", () => {
       .toBeInTheDocument();
   });
 
+  it("uses the crosshair cursor for every Shapes flyout drawing tool", () => {
+    for (const tool of ["rectangle", "ellipse", "line", "triangle", "diamond", "star"]) {
+      expect(screenshotEditorStyles).toMatch(new RegExp(
+        `\\.screenshot-canvas\\.tool-${tool},?[\\s\\S]*?cursor: crosshair;`,
+      ));
+      expect(screenshotEditorStyles).toContain(
+        `.screenshot-canvas-viewport:has(.screenshot-canvas.tool-${tool})`,
+      );
+    }
+  });
+
   it("moves keyboard focus into the Shapes flyout and restores it on Escape", async () => {
     render(<ScreenshotEditor />);
     await screen.findByLabelText("Canvas width");
