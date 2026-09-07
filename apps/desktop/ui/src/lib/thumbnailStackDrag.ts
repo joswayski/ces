@@ -7,14 +7,14 @@ export const THUMBNAIL_STACK_DRAG_SWAY_MAX_X_PX = 4;
 export const THUMBNAIL_STACK_DRAG_SWAY_MAX_Y_PX = 2.5;
 
 /**
- * How much of each pointer step the rear cards initially refuse to follow.
- * 1 would leave them frozen in world space; 0 would glue them to the hands.
- * Keep this low so a flick cannot throw peeking cards off the webview.
+ * The carried pile is deliberately under-damped: when the pointer pauses, the
+ * rear cards briefly pass their rest position before settling instead of
+ * stopping like a rigid object.
  */
-export const THUMBNAIL_STACK_DRAG_SWAY_INERTIA = 0.18;
-
-/** Catch-up rate in 1/seconds. Higher is a stiffer stack. */
-export const THUMBNAIL_STACK_DRAG_SWAY_SPRING = 14;
+export const THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_SPRING = 260;
+export const THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_DAMPING = 19;
+/** Converts cursor speed in CSS pixels per second into rear-card momentum. */
+export const THUMBNAIL_STACK_DRAG_SWAY_POINTER_SPEED_GAIN = 0.18;
 
 /** First sample after a press has no previous timestamp; treat it as one frame. */
 const THUMBNAIL_STACK_DRAG_SWAY_DEFAULT_DT_MS = 16;
@@ -88,6 +88,11 @@ export type ThumbnailStackDragSwayMotion = {
   dtMs: number;
 };
 
+type ThumbnailStackDragSwayState = {
+  position: ThumbnailStackPoint;
+  velocity: ThumbnailStackPoint;
+};
+
 function clamp(value: number, min: number, max: number): number {
   const next = Math.min(max, Math.max(min, value));
   return next === 0 ? 0 : next;
@@ -112,31 +117,47 @@ function swayDtMs(dtMs: number): number {
 }
 
 /**
- * Rear-card trail while the pile is carried. The front card stays glued to the
- * pointer; this vector is the extra lag at depth 1. Deeper cards take a larger
- * share in CSS so the pile arches: the hands move first, the top follows late.
- *
- * `dx`/`dy` are the latest pointer step, not the total drag from press, so the
- * lean tracks velocity and settles when the pointer stops.
+ * Advance the live pile with a small, under-damped spring. Pointer travel is
+ * normalized by elapsed time, so a fast flick stores more momentum than a
+ * slow carry over the same distance.
  */
-export function tickThumbnailStackDragSway(
-  sway: ThumbnailStackPoint,
+function tickThumbnailStackDragSwayState(
+  sway: ThumbnailStackDragSwayState,
   motion: ThumbnailStackDragSwayMotion,
   options: { reducedMotion?: boolean } = {},
-): ThumbnailStackPoint {
-  if (options.reducedMotion) return { x: 0, y: 0 };
-  const dt = swayDtMs(motion.dtMs) / 1000;
-  let x = sway.x - motion.dx * THUMBNAIL_STACK_DRAG_SWAY_INERTIA;
-  let y = sway.y - motion.dy * THUMBNAIL_STACK_DRAG_SWAY_INERTIA;
-  if (dt > 0) {
-    const decay = Math.exp(-THUMBNAIL_STACK_DRAG_SWAY_SPRING * dt);
-    x *= decay;
-    y *= decay;
+): ThumbnailStackDragSwayState {
+  if (options.reducedMotion) {
+    return { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } };
   }
-  return {
-    x: clamp(x, -THUMBNAIL_STACK_DRAG_SWAY_MAX_X_PX, THUMBNAIL_STACK_DRAG_SWAY_MAX_X_PX),
-    y: clamp(y, -THUMBNAIL_STACK_DRAG_SWAY_MAX_Y_PX, THUMBNAIL_STACK_DRAG_SWAY_MAX_Y_PX),
+  const dt = swayDtMs(motion.dtMs) / 1000;
+  if (dt === 0) return sway;
+  const advance = (position: number, velocity: number, pointerStep: number, max: number) => {
+    const pointerSpeed = pointerStep / dt;
+    const nextVelocity = (
+      velocity
+      - pointerSpeed * THUMBNAIL_STACK_DRAG_SWAY_POINTER_SPEED_GAIN
+      - position * THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_SPRING * dt
+    ) * Math.exp(-THUMBNAIL_STACK_DRAG_SWAY_WOBBLE_DAMPING * dt);
+    const nextPosition = clamp(position + nextVelocity * dt, -max, max);
+    // A clamp is a physical boundary, not stored momentum waiting to kick the
+    // pile back into motion on the next frame.
+    return nextPosition === -max || nextPosition === max
+      ? { position: nextPosition, velocity: 0 }
+      : { position: nextPosition, velocity: nextVelocity };
   };
+  const x = advance(
+    sway.position.x,
+    sway.velocity.x,
+    motion.dx,
+    THUMBNAIL_STACK_DRAG_SWAY_MAX_X_PX,
+  );
+  const y = advance(
+    sway.position.y,
+    sway.velocity.y,
+    motion.dy,
+    THUMBNAIL_STACK_DRAG_SWAY_MAX_Y_PX,
+  );
+  return { position: { x: x.position, y: y.position }, velocity: { x: x.velocity, y: y.velocity } };
 }
 
 export function clampThumbnailStackFrame(
@@ -286,6 +307,7 @@ export class CollapsedThumbnailStackDrag {
   private dragging = false;
   private releasing = false;
   private sway: ThumbnailStackPoint = { x: 0, y: 0 };
+  private swayVelocity: ThumbnailStackPoint = { x: 0, y: 0 };
   private lastTickMs = 0;
   private swayRaf = 0;
   private pointerSampled = false;
@@ -306,6 +328,7 @@ export class CollapsedThumbnailStackDrag {
   /** Start lean from rest after the hover fan has gathered. */
   resetSway() {
     this.sway = { x: 0, y: 0 };
+    this.swayVelocity = { x: 0, y: 0 };
     this.lastTickMs = 0;
     this.host.onSway?.(this.sway);
   }
@@ -407,6 +430,7 @@ export class CollapsedThumbnailStackDrag {
     this.lastPointer = this.startPointer;
     this.dragging = false;
     this.sway = { x: 0, y: 0 };
+    this.swayVelocity = { x: 0, y: 0 };
     this.lastTickMs = 0;
     this.pointerSampled = false;
     this.stopSwayLoop();
@@ -443,6 +467,7 @@ export class CollapsedThumbnailStackDrag {
     this.ready = null;
     this.stopSwayLoop();
     this.sway = { x: 0, y: 0 };
+    this.swayVelocity = { x: 0, y: 0 };
     this.lastTickMs = 0;
     this.pointerSampled = false;
   }
@@ -460,11 +485,13 @@ export class CollapsedThumbnailStackDrag {
       ? THUMBNAIL_STACK_DRAG_SWAY_DEFAULT_DT_MS
       : now - this.lastTickMs;
     this.lastTickMs = now;
-    this.sway = tickThumbnailStackDragSway(
-      this.sway,
+    const next = tickThumbnailStackDragSwayState(
+      { position: this.sway, velocity: this.swayVelocity },
       { dx, dy, dtMs },
       { reducedMotion: this.host.reducedMotion() },
     );
+    this.sway = next.position;
+    this.swayVelocity = next.velocity;
   }
 
   private startSwayLoop() {
