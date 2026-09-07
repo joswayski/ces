@@ -29,8 +29,8 @@ html[data-preview-harness-view="thumbnail"] #root {
     0 6px 14px rgba(0, 0, 0, 0.38),
     0 2px 5px rgba(0, 0, 0, 0.26);
   /*
-   * Signed gravity from JS: +1 bottom (peek up), 0 middle (structured
-   * peek tucked), -1 top (peek down).
+   * Signed gravity from JS chooses when the pile changes anchor. The discrete
+   * expand sign keeps the card spacing full-sized while the frame is moving.
    */
   --thumbnail-stack-gravity: 1;
   --thumbnail-stack-expand-sign: 1;
@@ -2150,7 +2150,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
       calc(var(--thumbnail-stack-pile-depth, 0) * -0.8px),
       calc(
         var(--thumbnail-stack-pile-depth, 0) * -13px
-          * var(--thumbnail-stack-gravity, 1)
+          * var(--thumbnail-stack-expand-sign, 1)
         + var(--thumbnail-stack-peek-jitter, 0px)
       ),
       calc(var(--thumbnail-stack-pile-depth, 0) * -24px)
@@ -2159,7 +2159,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
     rotateX(
       calc(
         var(--thumbnail-stack-pile-depth, 0) * -0.8deg
-          * var(--thumbnail-stack-gravity, 1)
+          * var(--thumbnail-stack-expand-sign, 1)
       )
     )
     scale(calc(1 - var(--thumbnail-stack-pile-depth, 0) * 0.025));
@@ -2168,7 +2168,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
       calc(var(--thumbnail-stack-pile-depth, 0) * -0.6px),
       calc(
         var(--thumbnail-stack-pile-depth, 0) * -16px
-          * var(--thumbnail-stack-gravity, 1)
+          * var(--thumbnail-stack-expand-sign, 1)
         + var(--thumbnail-stack-peek-jitter, 0px)
       ),
       calc(var(--thumbnail-stack-pile-depth, 0) * -18px)
@@ -2177,7 +2177,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
     rotateX(
       calc(
         var(--thumbnail-stack-pile-depth, 0) * -0.7deg
-          * var(--thumbnail-stack-gravity, 1)
+          * var(--thumbnail-stack-expand-sign, 1)
       )
     )
     scale(calc(1 - var(--thumbnail-stack-pile-depth, 0) * 0.02));
@@ -2207,7 +2207,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
   transition:
     opacity var(--dur-4) var(--ease-out),
     box-shadow var(--dur-4) var(--ease-out);
-  transform-origin: 50% calc(50% * (1 + var(--thumbnail-stack-gravity, 1)));
+  transform-origin: 50% calc(50% * (1 + var(--thumbnail-stack-expand-sign, 1)));
   pointer-events: none;
   transform: var(--thumbnail-stack-rest-transform);
   /*
@@ -2297,8 +2297,8 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
 }
 
 /*
- * Pressing eases the hover fan back to the rest pile. Drag sway waits for
- * this gather (`thumbnail-stack-drag-sway`) so a mid-ease pose cannot snap
+ * Keep the hover fan open while the press becomes a drag. Drag sway waits for
+ * this handoff (`thumbnail-stack-drag-sway`) so a mid-ease pose cannot snap
  * onto the velocity lean.
  * Keep the accent glow while the pointer is down so it does not drop out from
  * under the sparkles the moment a click becomes a drag.
@@ -2309,6 +2309,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
     opacity var(--dur-4) var(--ease-out),
     transform var(--stack-fan-dur) calc(var(--thumbnail-stack-pile-depth, 0) * var(--stack-fan-stagger)) var(--stack-fan-ease),
     box-shadow var(--stack-fan-dur) calc(var(--thumbnail-stack-pile-depth, 0) * var(--stack-fan-stagger)) var(--stack-fan-ease);
+  transform: var(--thumbnail-stack-hover-transform);
   box-shadow:
     var(--thumbnail-card-shadow),
     0 0 0 1px rgba(var(--theme-accent-rgb), 0.55),
@@ -2422,14 +2423,14 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
     0px,
     calc(
       var(--thumbnail-collapsed-hover-peek, var(--thumbnail-collapsed-peek, 0px))
-        * var(--thumbnail-stack-gravity, 1)
+        * var(--thumbnail-stack-expand-sign, 1)
     )
   );
   --thumbnail-peek-down: max(
     0px,
     calc(
       var(--thumbnail-collapsed-hover-peek, var(--thumbnail-collapsed-peek, 0px))
-        * -1 * var(--thumbnail-stack-gravity, 1)
+        * -1 * var(--thumbnail-stack-expand-sign, 1)
     )
   );
   position: absolute;
@@ -2557,7 +2558,8 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
  * Drag lean is velocity-driven from JS (`--thumbnail-drag-sway-*`). Origin is
  * the bottom of each card (the hands). Negative sway is a rightward carry:
  * rear cards translate and rotate a little so the pile trails without leaving
- * the window. Depth is linear (not triangular) so the back cards stay close.
+ * the window. Preserve the hover fan's 16px depth spacing while carried.
+ * Depth is linear (not triangular) so the back cards stay close.
  * Skip a transform transition here so the lean can track the pointer;
  * dropping the dragging class lets hover-ready ease back to rest.
  */
@@ -2568,18 +2570,18 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
   transform:
     translate3d(
       calc(
-        var(--thumbnail-stack-pile-depth, 0) * -0.8px
+        var(--thumbnail-stack-pile-depth, 0) * -0.6px
         + var(--thumbnail-drag-sway-x, 0) * 1px
           * var(--thumbnail-stack-pile-depth, 0)
           * 0.7
       ),
       calc(
-        var(--thumbnail-stack-pile-depth, 0) * -13px
-          * var(--thumbnail-stack-gravity, 1)
+        var(--thumbnail-stack-pile-depth, 0) * -16px
+          * var(--thumbnail-stack-expand-sign, 1)
         + var(--thumbnail-stack-peek-jitter, 0px)
         + var(--thumbnail-drag-sway-y, 0) * 1px * var(--thumbnail-stack-pile-depth, 0) * 0.2
       ),
-      calc(var(--thumbnail-stack-pile-depth, 0) * -24px)
+      calc(var(--thumbnail-stack-pile-depth, 0) * -18px)
     )
     rotateZ(
       calc(
@@ -2590,11 +2592,11 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
     )
     rotateX(
       calc(
-        var(--thumbnail-stack-pile-depth, 0) * -0.8deg
-          * var(--thumbnail-stack-gravity, 1)
+        var(--thumbnail-stack-pile-depth, 0) * -0.7deg
+          * var(--thumbnail-stack-expand-sign, 1)
       )
     )
-    scale(calc(1 - var(--thumbnail-stack-pile-depth, 0) * 0.025));
+    scale(calc(1 - var(--thumbnail-stack-pile-depth, 0) * 0.02));
   filter: brightness(calc(1 - var(--thumbnail-stack-pile-depth, 0) * 0.12));
   box-shadow:
     var(--thumbnail-card-shadow),

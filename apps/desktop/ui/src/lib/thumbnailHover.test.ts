@@ -706,6 +706,7 @@ describe("releaseThumbnailCapturedHover", () => {
 
     expect(releaseThumbnailCapturedHover(target, { x: 40, y: 40 })).toBe(false);
     expect(target).not.toHaveAttribute(THUMBNAIL_HOVER_STALE_ATTRIBUTE);
+    expectNativePointerHover(target, true);
   });
 
   it("rearms collapsed hover on a later enter", () => {
