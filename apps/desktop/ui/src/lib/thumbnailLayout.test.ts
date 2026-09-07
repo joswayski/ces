@@ -44,12 +44,14 @@ import {
   thumbnailStackSideFromBias,
   thumbnailStackSideFromPlacement,
   THUMBNAIL_STACK_GRAVITY_VAR,
+  THUMBNAIL_STACK_CENTER_PROXIMITY_VAR,
   THUMBNAIL_STACK_ANCHOR_TOP_GRAVITY,
   THUMBNAIL_STACK_ANCHOR_BOTTOM_GRAVITY,
   THUMBNAIL_STACK_SIDE_LEFT_BIAS,
   THUMBNAIL_STACK_SIDE_RIGHT_BIAS,
   captureThumbnailCardPoses,
   thumbnailStackFanCollapseMs,
+  thumbnailStackLayerRotationDeg,
   thumbnailStackPeekJitterPx,
   thumbnailStackPileDepth,
   thumbnailStackPoseDepth,
@@ -68,6 +70,8 @@ import {
   THUMBNAIL_STACK_HOVER_PEEK_PX,
   THUMBNAIL_STACK_MOTION_DURATION_MS,
   THUMBNAIL_STACK_PADDING_PX,
+  THUMBNAIL_STACK_LAYER_ROTATION_MIN_DEG,
+  THUMBNAIL_STACK_LAYER_ROTATION_MAX_DEG,
   THUMBNAIL_STACK_PEEK_JITTER_DECAY,
   THUMBNAIL_STACK_PEEK_JITTER_PX,
   THUMBNAIL_STACK_RECEDING_STEP,
@@ -326,6 +330,11 @@ describe("thumbnail stack layout", () => {
     const stack = document.createElement("main");
     applyThumbnailStackGravity(stack, -0.42);
     expect(stack.style.getPropertyValue(THUMBNAIL_STACK_GRAVITY_VAR)).toBe("-0.42");
+    expect(stack.style.getPropertyValue(THUMBNAIL_STACK_CENTER_PROXIMITY_VAR)).toBe("0.58");
+    applyThumbnailStackGravity(stack, 0);
+    expect(stack.style.getPropertyValue(THUMBNAIL_STACK_CENTER_PROXIMITY_VAR)).toBe("1");
+    applyThumbnailStackGravity(stack, 1);
+    expect(stack.style.getPropertyValue(THUMBNAIL_STACK_CENTER_PROXIMITY_VAR)).toBe("0");
     expect(thumbnailStyles).toMatch(
       /\(\s*var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\+ var\(--thumbnail-stack-peek-jitter, 0px\)\s*\) \* var\(--thumbnail-stack-gravity, 1\)/,
     );
@@ -757,6 +766,21 @@ describe("thumbnail stack layout", () => {
     expect(Math.abs(thumbnailStackPeekJitterPx(6))).toBeLessThanOrEqual(envelope(6) + 1e-12);
     expect(thumbnailStyles).toMatch(
       /\(\s*var\(--thumbnail-stack-pile-depth, 0\) \* -13px\s*\n\s*\+ var\(--thumbnail-stack-peek-jitter, 0px\)\s*\) \* var\(--thumbnail-stack-gravity, 1\)/,
+    );
+  });
+
+  it("gives only rear cards a stable restrained paper rotation", () => {
+    expect(thumbnailStackLayerRotationDeg("capture-1", 0)).toBe(0);
+    const first = thumbnailStackLayerRotationDeg("capture-1", 1);
+    const second = thumbnailStackLayerRotationDeg("capture-2", 2);
+    expect(thumbnailStackLayerRotationDeg("capture-1", 4)).toBe(first);
+    expect(Math.abs(first)).toBeGreaterThanOrEqual(THUMBNAIL_STACK_LAYER_ROTATION_MIN_DEG);
+    expect(Math.abs(first)).toBeLessThanOrEqual(THUMBNAIL_STACK_LAYER_ROTATION_MAX_DEG);
+    expect(Math.abs(second)).toBeGreaterThanOrEqual(THUMBNAIL_STACK_LAYER_ROTATION_MIN_DEG);
+    expect(Math.abs(second)).toBeLessThanOrEqual(THUMBNAIL_STACK_LAYER_ROTATION_MAX_DEG);
+    expect(Math.sign(first)).not.toBe(Math.sign(second));
+    expect(thumbnailStyles).toMatch(
+      /var\(--thumbnail-stack-layer-rotation, 0\)\s*\n\s*\* var\(--thumbnail-stack-center-proximity, 0\)/,
     );
   });
 

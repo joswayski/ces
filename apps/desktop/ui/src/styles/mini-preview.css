@@ -39,10 +39,12 @@ body:has(.thumbnail-stack),
     0 2px 5px rgba(0, 0, 0, 0.26);
   /*
    * Signed gravity from JS brings the collapsed layers together around the
-   * vertical midpoint. The discrete expand sign still chooses which way the
+   * vertical midpoint. Center proximity inversely adds a restrained paper
+   * rotation there. The discrete expand sign still chooses which way the
    * full-size list opens after the anchor changes.
    */
   --thumbnail-stack-gravity: 1;
+  --thumbnail-stack-center-proximity: 0;
   --thumbnail-stack-expand-sign: 1;
 
   position: absolute;
@@ -2166,7 +2168,13 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
       ),
       calc(var(--thumbnail-stack-pile-depth, 0) * -24px)
     )
-    rotateZ(0deg)
+    rotateZ(
+      calc(
+        var(--thumbnail-stack-layer-rotation, 0)
+        * var(--thumbnail-stack-center-proximity, 0)
+        * 1deg
+      )
+    )
     rotateX(
       calc(
         var(--thumbnail-stack-pile-depth, 0) * -0.8deg
@@ -2185,7 +2193,13 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
       ),
       calc(var(--thumbnail-stack-pile-depth, 0) * -18px)
     )
-    rotateZ(0deg)
+    rotateZ(
+      calc(
+        var(--thumbnail-stack-layer-rotation, 0)
+        * var(--thumbnail-stack-center-proximity, 0)
+        * 1deg
+      )
+    )
     rotateX(
       calc(
         var(--thumbnail-stack-pile-depth, 0) * -0.7deg
@@ -2606,9 +2620,12 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
     )
     rotateZ(
       calc(
-        var(--thumbnail-drag-sway-x, 0)
-        * var(--thumbnail-stack-pile-depth, 0)
-        * 0.12deg
+        var(--thumbnail-stack-layer-rotation, 0)
+          * var(--thumbnail-stack-center-proximity, 0)
+          * 1deg
+        + var(--thumbnail-drag-sway-x, 0)
+          * var(--thumbnail-stack-pile-depth, 0)
+          * 0.12deg
       )
     )
     rotateX(

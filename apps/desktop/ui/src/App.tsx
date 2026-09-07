@@ -175,6 +175,7 @@ import {
   captureThumbnailCardPoses,
   type ThumbnailCardPose,
   thumbnailStackFanCollapseMs,
+  thumbnailStackLayerRotationDeg,
   thumbnailStackPeekJitterPx,
   THUMBNAIL_CARD_HEIGHT_PX,
   THUMBNAIL_CARD_SLOT_PX,
@@ -8169,6 +8170,10 @@ export function ThumbnailCard({
       style={stackCollapsed || clearDelayMs > 0 ? {
         ...(stackCollapsed ? {
           "--thumbnail-stack-base-depth": stackDepth,
+          "--thumbnail-stack-layer-rotation": thumbnailStackLayerRotationDeg(
+            artifact.id,
+            stackDepth,
+          ),
           "--thumbnail-stack-peek-jitter": `${thumbnailStackPeekJitterPx(stackDepth)}px`,
           ...(expandFromPose
             ? {
