@@ -150,8 +150,6 @@ import {
 import {
   animateThumbnailStackScroll,
   applyThumbnailStackGravity,
-  convertHarnessStackOffsetAnchor,
-  convertThumbnailStackFrameAnchor,
   createThumbnailStackShiftController,
   DEFAULT_MINI_PREVIEW_PLACEMENT,
   harnessOffsetForPlacement,
@@ -159,7 +157,8 @@ import {
   scheduleScrollThumbnailStackToNewest,
   scrollThumbnailStackToNewest,
   shouldScrollThumbnailStackToEnd,
-  thumbnailCollapsedFrameHeight,
+  THUMBNAIL_COLLAPSED_TRAVEL_HEIGHT_PX,
+  thumbnailCollapsedPadding,
   thumbnailStackAnchorFromGravity,
   thumbnailStackAnchorFromPlacement,
   thumbnailStackBiasFromFrameX,
@@ -179,7 +178,9 @@ import {
   type ThumbnailCardPose,
   thumbnailStackFanCollapseMs,
   thumbnailStackPeekJitterPx,
+  THUMBNAIL_CARD_HEIGHT_PX,
   THUMBNAIL_CARD_SLOT_PX,
+  THUMBNAIL_STACK_CONTROL_GUTTER_PX,
   THUMBNAIL_STACK_EXPAND_COLLAPSE_MS,
   THUMBNAIL_STACK_SCROLLPORT_CLASS,
   waitForThumbnailStackSettle,
@@ -6170,10 +6171,8 @@ export function Thumbnail() {
   ));
   const stackRef = useRef<HTMLElement>(null);
   const stackDrag = useRef<CollapsedThumbnailStackDrag | null>(null);
-  // Native collapsed windows retain their expanded height. Track which end
-  // currently owns the compact pile so a live midpoint flip can convert that
-  // tall frame without moving the visible previews.
-  const collapsedLayoutAnchorRef = useRef<ThumbnailStackAnchor>("bottom");
+  // The browser harness emulates the native collapsed frame's fixed origin.
+  const harnessCollapsedLayout = useRef({ fixed: false, padding: THUMBNAIL_STACK_CONTROL_GUTTER_PX });
   const collapsedStackPointerCleanup = useRef<(() => void) | null>(null);
   const skipCollapsedStackClick = useRef(false);
   const stackFanCollapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -6227,6 +6226,36 @@ export function Thumbnail() {
     pendingNewestReveal.current = true;
   }, []);
 
+  // React replaces className when the anchor (or hover readiness) changes.
+  // Restore the imperative pointer-session pose before that commit can paint.
+  useLayoutEffect(() => {
+    const dragging = stackDrag.current?.isDragging ?? false;
+    setThumbnailStackDragging(stackRef.current, dragging);
+    setThumbnailStackPressing(stackRef.current, dragging && collapsedStackPointerCleanup.current !== null);
+    setThumbnailStackDragSwayReady(stackRef.current, dragging && stackFanCollapseTimer.current === null);
+  });
+
+  useLayoutEffect(() => {
+    if (isTauri()) return;
+    const fixed = stackMotion === "collapsed" || stackMotion === "collapsing";
+    const padding = thumbnailCollapsedPadding(artifacts.length);
+    const previous = harnessCollapsedLayout.current;
+    harnessCollapsedLayout.current = { fixed, padding };
+    if (fixed === previous.fixed && (!fixed || padding === previous.padding)) return;
+    const fixedTop = window.innerHeight - padding - THUMBNAIL_CARD_HEIGHT_PX;
+    const alignedTop = stackAnchorRef.current === "top"
+      ? THUMBNAIL_STACK_CONTROL_GUTTER_PX
+      : window.innerHeight - THUMBNAIL_STACK_CONTROL_GUTTER_PX - THUMBNAIL_CARD_HEIGHT_PX;
+    const previousTop = previous.fixed
+      ? window.innerHeight - previous.padding - THUMBNAIL_CARD_HEIGHT_PX
+      : alignedTop;
+    const offset = readHarnessStackOffset();
+    document.documentElement.style.setProperty(
+      "--thumbnail-stack-drag-y",
+      `${offset.y + previousTop - (fixed ? fixedTop : alignedTop)}px`,
+    );
+  }, [stackMotion, artifacts.length]);
+
   const commitStackSide = useCallback((nextSide: ThumbnailStackSide) => {
     if (stackSideRef.current === nextSide) return;
     stackSideRef.current = nextSide;
@@ -6245,8 +6274,18 @@ export function Thumbnail() {
     if (isTauri()) return;
     const viewport = { width: window.innerWidth, height: window.innerHeight };
     const home = harnessOffsetForPlacement(placement, viewport);
+    const count = stackRef.current?.querySelectorAll(":scope > .thumbnail-card").length ?? 1;
+    const padding = harnessCollapsedLayout.current.fixed ? thumbnailCollapsedPadding(count) : undefined;
+    if (padding !== undefined) {
+      home.y = padding - THUMBNAIL_STACK_CONTROL_GUTTER_PX;
+      if (home.anchor === "top") {
+        home.y += 2 * THUMBNAIL_STACK_CONTROL_GUTTER_PX + THUMBNAIL_CARD_HEIGHT_PX - viewport.height;
+      }
+    }
     writeHarnessStackOffset(home.x, home.y, document.documentElement, viewport, {
       anchor: home.anchor,
+      contentHeight: THUMBNAIL_COLLAPSED_TRAVEL_HEIGHT_PX,
+      padding,
     });
   }, [commitStackAnchor, commitStackSide]);
 
@@ -6490,12 +6529,11 @@ export function Thumbnail() {
       const offset = readHarnessStackOffset();
       const gravity = thumbnailStackGravityFromHarness({
         offsetY: offset.y,
-        anchor: stackAnchorRef.current,
         viewportHeight: window.innerHeight,
-        contentHeight: thumbnailCollapsedFrameHeight(Math.max(
+        padding: thumbnailCollapsedPadding(
           stackRef.current?.querySelectorAll(":scope > .thumbnail-card").length ?? 1,
-          1,
-        )),
+        ),
+        contentHeight: THUMBNAIL_COLLAPSED_TRAVEL_HEIGHT_PX,
       });
       applyThumbnailStackGravity(stackRef.current, gravity);
     };
@@ -7200,15 +7238,8 @@ export function Thumbnail() {
     });
   };
 
-  const collapsedContentHeight = () => thumbnailCollapsedFrameHeight(
-    Math.max(
-      stackRef.current?.querySelectorAll(":scope > .thumbnail-card").length ?? 1,
-      1,
-    ),
-  );
-
   const collapsedNativeGeometry = async () => {
-    const contentHeight = collapsedContentHeight();
+    const contentHeight = THUMBNAIL_COLLAPSED_TRAVEL_HEIGHT_PX;
     const scale = currentWindow ? await currentWindow.scaleFactor() : 1;
     const size = currentWindow ? await currentWindow.innerSize() : null;
     const monitor = await currentMonitor();
@@ -7241,13 +7272,14 @@ export function Thumbnail() {
     x: number,
     y: number,
     anchor: ThumbnailStackAnchor,
-    nativeGeometry?: Awaited<ReturnType<typeof collapsedNativeGeometry>>,
   ) => {
-    const contentHeight = collapsedContentHeight();
+    const contentHeight = THUMBNAIL_COLLAPSED_TRAVEL_HEIGHT_PX;
+    const padding = thumbnailCollapsedPadding(
+      stackRef.current?.querySelectorAll(":scope > .thumbnail-card").length ?? 1,
+    );
     if (isTauri()) {
       try {
-        const { frameHeight, work, workTop, workHeight } = nativeGeometry
-          ?? await collapsedNativeGeometry();
+        const { frameHeight, work, workTop, workHeight } = await collapsedNativeGeometry();
         const clamped = clampThumbnailStackFrame(
           x,
           y,
@@ -7256,6 +7288,7 @@ export function Thumbnail() {
           work,
           contentHeight,
           anchor,
+          padding,
         );
         const next = await invoke<{ x: number; y: number }>(
           "set_mini_preview_stack_position",
@@ -7267,8 +7300,7 @@ export function Thumbnail() {
             pileBottom: thumbnailStackVisualPileBottom({
               y: next.y,
               frameHeight,
-              contentHeight,
-              anchor,
+              padding,
             }),
             workTop,
             workHeight,
@@ -7299,15 +7331,15 @@ export function Thumbnail() {
       y,
       document.documentElement,
       viewport,
-      { anchor, contentHeight },
+      { anchor, contentHeight, padding },
     );
     applyThumbnailStackGravity(
       stackRef.current,
       thumbnailStackGravityFromHarness({
         offsetY: written.y,
-        anchor,
         viewportHeight: viewport.height,
         contentHeight,
+        padding,
       }),
     );
     commitStackSide(thumbnailStackSideFromBias(
@@ -7318,98 +7350,14 @@ export function Thumbnail() {
   };
 
   const moveCollapsedStackFrame = async (x: number, y: number) => {
-    const from = collapsedLayoutAnchorRef.current;
-    const contentHeight = collapsedContentHeight();
-    if (isTauri()) {
-      try {
-        const nativeGeometry = await collapsedNativeGeometry();
-        const { frameHeight, work, workTop, workHeight } = nativeGeometry;
-        const sourceFrame = clampThumbnailStackFrame(
-          x,
-          y,
-          340,
-          frameHeight,
-          work,
-          contentHeight,
-          from,
-        );
-        const gravity = thumbnailStackGravityFromWorkArea({
-          pileBottom: thumbnailStackVisualPileBottom({
-            y: sourceFrame.y,
-            frameHeight,
-            contentHeight,
-            anchor: from,
-          }),
-          workTop,
-          workHeight,
-          contentHeight,
-          bottomGap: 12,
-        });
-        const nextAnchor = thumbnailStackAnchorFromGravity(gravity, from);
-        if (nextAnchor === from) {
-          return placeCollapsedStackFrame(x, y, from, nativeGeometry);
-        }
-        const converted = convertThumbnailStackFrameAnchor(
-          sourceFrame,
-          from,
-          nextAnchor,
-          frameHeight,
-          contentHeight,
-        );
-        collapsedLayoutAnchorRef.current = nextAnchor;
-        // The retained window can have hundreds of pixels of empty expanded
-        // height. Hold the stack at its converted screen position while the
-        // DOM anchor changes and native position IPC catches up; otherwise
-        // the new alignment can paint at the opposite edge for one frame.
-        const stack = stackRef.current;
-        if (stack) stack.style.translate = `0 ${converted.y - sourceFrame.y}px`;
-        commitStackAnchor(nextAnchor);
-        try {
-          const next = await placeCollapsedStackFrame(
-            converted.x,
-            converted.y,
-            nextAnchor,
-            nativeGeometry,
-          );
-          stackDrag.current?.rebaseFrame(next, sourceFrame);
-          return next;
-        } finally {
-          stack?.style.removeProperty("translate");
-        }
-      } catch {
-        collapsedLayoutAnchorRef.current = from;
-        commitStackAnchor(from);
-        return placeCollapsedStackFrame(x, y, from);
-      }
-    }
-
-    const viewport = { width: window.innerWidth, height: window.innerHeight };
-    const gravity = thumbnailStackGravityFromHarness({
-      offsetY: y,
-      anchor: from,
-      viewportHeight: viewport.height,
-      contentHeight,
-    });
-    const nextAnchor = thumbnailStackAnchorFromGravity(gravity, from);
-    if (nextAnchor === from) return placeCollapsedStackFrame(x, y, from);
-    const converted = convertHarnessStackOffsetAnchor(
-      { x, y },
-      from,
-      nextAnchor,
-      viewport.height,
-      contentHeight,
-    );
-    collapsedLayoutAnchorRef.current = nextAnchor;
+    const from = stackAnchorRef.current;
+    const next = await placeCollapsedStackFrame(x, y, from);
     const stack = stackRef.current;
-    if (stack) stack.style.translate = `0 ${converted.y - y}px`;
-    commitStackAnchor(nextAnchor);
-    try {
-      const next = await placeCollapsedStackFrame(converted.x, converted.y, nextAnchor);
-      stackDrag.current?.rebaseFrame(next, { x, y });
-      return next;
-    } finally {
-      stack?.style.removeProperty("translate");
-    }
+    const gravity = Number(stack?.style.getPropertyValue("--thumbnail-stack-gravity") ?? 1);
+    // Gravity and expansion direction change; the physical frame and front
+    // card origin do not. No native/DOM offset handoff can paint halfway.
+    commitStackAnchor(thumbnailStackAnchorFromGravity(gravity, from));
+    return next;
   };
 
   const collapsedStackDrag = () => {
@@ -7463,7 +7411,6 @@ export function Thumbnail() {
     collapsedStackPointerCleanup.current?.();
     const drag = collapsedStackDrag();
     if (!drag.pointerDown(event.nativeEvent)) return;
-    collapsedLayoutAnchorRef.current = stackAnchorRef.current;
     skipCollapsedStackClick.current = true;
     if (stackFanCollapseTimer.current) {
       clearTimeout(stackFanCollapseTimer.current);
@@ -7544,6 +7491,7 @@ export function Thumbnail() {
     <>
       <main
         ref={stackRef}
+        style={{ "--thumbnail-collapsed-padding": `${thumbnailCollapsedPadding(artifacts.length)}px` } as CSSProperties}
         className={[
           "thumbnail-stack",
           compact ? "thumbnail-stack-compact" : "",

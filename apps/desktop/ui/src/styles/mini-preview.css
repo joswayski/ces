@@ -2218,31 +2218,25 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
   translate: none !important;
 }
 
-.thumbnail-stack-anchor-top.thumbnail-stack-compact > .thumbnail-card {
+.thumbnail-stack-anchor-top.thumbnail-stack-expanding > .thumbnail-card {
   top: 52px;
   bottom: auto;
-}
-
-/*
- * Compact piles hug the top (`top: 28px`) while Show less is gone. Expand and
- * collapse keep the front card on the 52px expanded origin so the list does
- * not jump onto the gutter after the 520ms fly, and Close/Delete stay below
- * the restack control for the whole morph.
- */
-.thumbnail-stack-anchor-top.thumbnail-stack-expanding > .thumbnail-card,
-.thumbnail-stack-anchor-top.thumbnail-stack-minimizing > .thumbnail-card {
-  top: 52px;
-}
-
-.thumbnail-stack-anchor-top.thumbnail-stack-expanding > .thumbnail-card {
   transition:
     opacity var(--dur-4) var(--ease-out),
     box-shadow var(--dur-4) var(--ease-out),
     top 0.52s var(--ease-standard);
 }
 
-.thumbnail-stack-anchor-top.thumbnail-stack-minimizing.thumbnail-stack-minimize-run > .thumbnail-card {
-  top: 28px;
+/* One physical origin throughout collapsed mode. Gravity can reverse without
+ * exchanging the ends of a retained native window. Symmetric native padding
+ * leaves room for the rear cards on either side of the front card. */
+.thumbnail-stack-compact:not(.thumbnail-stack-expanding) {
+  perspective-origin: 50% calc(100% - var(--thumbnail-collapsed-padding, 52px) - 80px);
+}
+
+.thumbnail-stack-compact:not(.thumbnail-stack-expanding) > .thumbnail-card {
+  top: auto;
+  bottom: var(--thumbnail-collapsed-padding, 52px);
 }
 
 /*
@@ -2470,6 +2464,11 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
 .thumbnail-stack-anchor-top .thumbnail-collapsed-hit-target {
   top: calc(52px - var(--thumbnail-peek-up));
   bottom: auto;
+}
+
+.thumbnail-stack-compact:not(.thumbnail-stack-expanding) .thumbnail-collapsed-hit-target {
+  top: auto;
+  bottom: calc(var(--thumbnail-collapsed-padding, 52px) - var(--thumbnail-peek-down));
 }
 
 .thumbnail-stack-minimized:not(.thumbnail-stack-dragging) > .thumbnail-card,

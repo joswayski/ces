@@ -7,12 +7,12 @@ import type { CaptureArtifact } from "./types";
 import {
   THUMBNAIL_CARD_SLOT_PX,
   THUMBNAIL_DELETE_STACK_MOTION_DELAY_MS,
-  THUMBNAIL_STACK_CONTROL_GUTTER_PX,
   THUMBNAIL_CARD_HEIGHT_PX,
   THUMBNAIL_STACK_EXPAND_COLLAPSE_MS,
   thumbnailStackFanCollapseMs,
   thumbnailStackNewestScrollTop,
   thumbnailStackPeekJitterPx,
+  thumbnailCollapsedPadding,
 } from "./lib/thumbnailLayout";
 import {
   THUMBNAIL_HOVER_STALE_ATTRIBUTE,
@@ -1523,8 +1523,21 @@ describe("Thumbnail", () => {
       onCaptureCompleted?.({ payload: secondArtifact });
     });
 
+    const offsetBeforeGrowth = Number.parseFloat(
+      document.documentElement.style.getPropertyValue("--thumbnail-stack-drag-y") || "0",
+    );
+    await act(async () => {
+      onCaptureCompleted?.({ payload: { ...secondArtifact, id: "capture-3" } });
+    });
+    const paddingDelta = thumbnailCollapsedPadding(3) - thumbnailCollapsedPadding(2);
+    expect(paddingDelta).toBeGreaterThan(0);
+    const offsetAfterGrowth = Number.parseFloat(
+      document.documentElement.style.getPropertyValue("--thumbnail-stack-drag-y"),
+    );
+    expect(offsetAfterGrowth - offsetBeforeGrowth).toBeCloseTo(paddingDelta);
+
     expect(stack).toHaveClass("thumbnail-stack-minimized");
-    const expand = screen.getByRole("button", { name: "Expand 2 previews" });
+    const expand = screen.getByRole("button", { name: "Expand 3 previews" });
     fireEvent.pointerDown(expand, {
       button: 0,
       pointerId: 1,
@@ -1543,9 +1556,9 @@ describe("Thumbnail", () => {
     expect(document.documentElement.style.getPropertyValue("--thumbnail-stack-drag-x")).toBe(
       "80px",
     );
-    expect(document.documentElement.style.getPropertyValue("--thumbnail-stack-drag-y")).toBe(
-      "-40px",
-    );
+    expect(Number.parseFloat(
+      document.documentElement.style.getPropertyValue("--thumbnail-stack-drag-y"),
+    )).toBeCloseTo(offsetAfterGrowth - 40);
     fireEvent.pointerUp(window, { pointerId: 1, bubbles: true });
     await waitFor(() => {
       expect(stack).not.toHaveClass("thumbnail-stack-dragging");
@@ -1685,12 +1698,19 @@ describe("Thumbnail", () => {
     expect(within(card).getByRole("button", { name: "Delete" })).toBeInTheDocument();
   });
 
-  it("flips the collapsed pile around mid-screen without waiting for drop", async () => {
+  it.each([1, 8, 24])("flips a %i-card pile around mid-screen without moving its origin", async (count) => {
     Object.defineProperty(window, "innerHeight", { configurable: true, value: 800 });
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 1_200 });
 
+    const invokeDefault = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation((command, args, options) => (
+      command === "get_artifacts"
+        ? Promise.resolve(Array.from({ length: count }, (_, index) => ({ ...artifact, id: `capture-${index}` })))
+        : invokeDefault(command, args, options)
+    ));
     render(<Thumbnail />);
-    const card = await screen.findByRole("article");
+    const [card] = await screen.findAllByRole("article");
+    if (!card) throw new Error("missing preview");
     const stack = card.closest(".thumbnail-stack")!;
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Minimize previews" }));
@@ -1700,7 +1720,7 @@ describe("Thumbnail", () => {
     });
     vi.useRealTimers();
 
-    const expand = screen.getByRole("button", { name: "Expand preview" });
+    const expand = screen.getByRole("button", { name: /^Expand .*preview/ });
     fireEvent.pointerDown(expand, {
       button: 0,
       pointerId: 1,
@@ -1712,28 +1732,8 @@ describe("Thumbnail", () => {
       const offsetY = Number.parseFloat(
         document.documentElement.style.getPropertyValue("--thumbnail-stack-drag-y") || "0",
       ) || 0;
-      if (stack.classList.contains("thumbnail-stack-anchor-top")) {
-        return offsetY + THUMBNAIL_STACK_CONTROL_GUTTER_PX;
-      }
-      return offsetY + 800 - THUMBNAIL_STACK_CONTROL_GUTTER_PX - THUMBNAIL_CARD_HEIGHT_PX;
+      return offsetY + 800 - thumbnailCollapsedPadding(count) - THUMBNAIL_CARD_HEIGHT_PX;
     };
-    const anchorHandoffs: string[] = [];
-    const setRootStyle = document.documentElement.style.setProperty.bind(
-      document.documentElement.style,
-    );
-    vi.spyOn(document.documentElement.style, "setProperty").mockImplementation(
-      (property, value, priority) => {
-        if (
-          property === "--thumbnail-stack-drag-y"
-          && stack instanceof HTMLElement
-          && stack.style.translate
-        ) {
-          anchorHandoffs.push(stack.style.translate);
-        }
-        setRootStyle(property, value, priority);
-      },
-    );
-
     const tops: number[] = [];
     for (const screenY of [640, 520, 400]) {
       fireEvent.pointerMove(window, {
@@ -1749,7 +1749,7 @@ describe("Thumbnail", () => {
       tops.push(cardTop());
     }
 
-    for (const screenY of [280, 160]) {
+    for (const screenY of [280, 200]) {
       fireEvent.pointerMove(window, {
         pointerId: 1,
         screenX: 40,
@@ -1759,11 +1759,12 @@ describe("Thumbnail", () => {
       await waitFor(() => {
         expect(stack).toHaveClass("thumbnail-stack-anchor-top");
       });
+      expect(stack).toHaveClass("thumbnail-stack-dragging", "thumbnail-stack-pressing");
       tops.push(cardTop());
     }
 
     for (let index = 1; index < tops.length; index += 1) {
-      expect(Math.abs(tops[index]! - tops[index - 1]!)).toBeLessThan(160);
+      expect(tops[index]! - tops[index - 1]!).toBe(index === tops.length - 1 ? -80 : -120);
     }
 
     fireEvent.pointerUp(window, { pointerId: 1, bubbles: true });
@@ -1772,7 +1773,6 @@ describe("Thumbnail", () => {
       expect(stack).not.toHaveClass("thumbnail-stack-dragging");
     });
     expect(cardTop()).toBeLessThan(200);
-    expect(anchorHandoffs).toEqual(["0 560px"]);
     expect((stack as HTMLElement).style.translate).toBe("");
 
     fireEvent.pointerDown(expand, {
@@ -1804,6 +1804,7 @@ describe("Thumbnail", () => {
       await waitFor(() => {
         expect(stack).not.toHaveClass("thumbnail-stack-anchor-top");
       });
+      expect(stack).toHaveClass("thumbnail-stack-dragging", "thumbnail-stack-pressing");
       tops.push(cardTop());
     }
     const downTops = tops.slice(-5);
@@ -1815,7 +1816,6 @@ describe("Thumbnail", () => {
       expect(stack).not.toHaveClass("thumbnail-stack-dragging");
     });
     expect(stack).not.toHaveClass("thumbnail-stack-anchor-top");
-    expect(anchorHandoffs).toEqual(["0 560px", "0 -560px"]);
     expect((stack as HTMLElement).style.translate).toBe("");
   });
 

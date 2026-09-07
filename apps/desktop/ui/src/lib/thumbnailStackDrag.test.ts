@@ -496,22 +496,7 @@ describe("CollapsedThumbnailStackDrag", () => {
     expect(sways.at(-1)).toEqual({ x: 0, y: 0 });
   });
 
-  it("rebases the press origin after a top/bottom coordinate switch", async () => {
-    const drag = new CollapsedThumbnailStackDrag({
-      getFrame: () => ({ x: 0, y: 0 }),
-      moveFrame: (x, y) => ({ x, y }),
-      reducedMotion: () => false,
-    });
-
-    drag.pointerDown({ button: 0, pointerId: 1, screenX: 10, screenY: 20 });
-    await drag.pointerMove({ pointerId: 1, screenX: 30, screenY: 50 });
-    drag.rebaseFrame({ x: 100, y: -200 });
-    const moved = await drag.pointerMove({ pointerId: 1, screenX: 40, screenY: 60 });
-    expect(moved?.x).toBe(110);
-    expect(moved?.y).toBe(-190);
-  });
-
-  it("preserves newer pointer travel while an earlier frame is rebased", async () => {
+  it("preserves newer pointer travel while an earlier native move is pending", async () => {
     let releaseFirstMove!: () => void;
     const firstMove = new Promise<void>((resolve) => {
       releaseFirstMove = resolve;
@@ -528,9 +513,6 @@ describe("CollapsedThumbnailStackDrag", () => {
         if (moveCount === 1) {
           markFirstMoveStarted();
           await firstMove;
-          const converted = { x, y: y - 200 };
-          drag.rebaseFrame(converted, { x, y });
-          return converted;
         }
         return { x, y };
       },
@@ -544,7 +526,7 @@ describe("CollapsedThumbnailStackDrag", () => {
     releaseFirstMove();
 
     await crossing;
-    expect(await newer).toMatchObject({ x: 30, y: -150 });
+    expect(await newer).toMatchObject({ x: 30, y: 50 });
   });
 });
 
