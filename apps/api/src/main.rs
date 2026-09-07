@@ -120,7 +120,9 @@ async fn main() {
 }
 
 async fn connect(url: &str) -> Result<PgPool, sqlx::Error> {
-    let options = PgConnectOptions::from_str(url)?.options([("search_path", "captures")]);
+    // PlanetScale's pooler rejects search_path startup options. Runtime queries
+    // already qualify their tables with captures.; only migrations need the option.
+    let options = PgConnectOptions::from_str(url)?;
     PgPoolOptions::new()
         .max_connections(10)
         .acquire_timeout(Duration::from_secs(5))

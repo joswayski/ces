@@ -56,6 +56,11 @@ for a dedicated database. No shared `public.users` or email uniqueness constrain
 Users have an internal bigint ID and unique WorkOS ID; no public identifier.
 WorkOS email and verification state are only a synchronized cache.
 
+Runtime queries explicitly qualify the `captures` schema; runtime connections
+must not send a `search_path` startup option, which PlanetScale's pooler rejects.
+Only the direct migration connection sets that option, keeping SQLx's migration
+ledger in `captures` without relying on pooled session state.
+
 Example (placeholders, not credentials):
 
 ```dotenv
