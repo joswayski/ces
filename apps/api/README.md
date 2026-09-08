@@ -211,8 +211,9 @@ Captures API** button uses Godis's `captures-api` route to
 configuration skips notification. A failed notification can be retried without
 overwriting the image. Publication does not deploy or configure secrets.
 
-- `captur.es` routes to `captures-web`: website, feedback, and updater routes.
-- `api.captur.es/api/*` routes to `captures-api`: unavailable account endpoint.
+- `captur.es/api/*` and `api.captur.es/api/*` route to `captures-api`, including
+  feedback, Preview updater manifests, and the unavailable account endpoint.
+- Other `captur.es` requests route to `captures-web`.
 - Keep Rust `/health` internal. No native login or token storage is implemented or
   claimed tested on macOS, Windows, or Linux.
 

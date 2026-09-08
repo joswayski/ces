@@ -11,10 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
-import { Route as ApiFeedbackRouteImport } from './routes/api/feedback'
-import { Route as ApiHealthRouteImport } from './routes/api/health'
-import { Route as ApiAccountMeRouteImport } from './routes/api/account/me'
-import { Route as ApiUpdatesPreviewRouteImport } from './routes/api/updates/preview'
+import { Route as HealthRouteImport } from './routes/health'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -26,86 +23,40 @@ const AccountRoute = AccountRouteImport.update({
   path: '/account',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiFeedbackRoute = ApiFeedbackRouteImport.update({
-  id: '/api/feedback',
-  path: '/api/feedback',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiHealthRoute = ApiHealthRouteImport.update({
-  id: '/api/health',
-  path: '/api/health',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiAccountMeRoute = ApiAccountMeRouteImport.update({
-  id: '/api/account/me',
-  path: '/api/account/me',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiUpdatesPreviewRoute = ApiUpdatesPreviewRouteImport.update({
-  id: '/api/updates/preview',
-  path: '/api/updates/preview',
+const HealthRoute = HealthRouteImport.update({
+  id: '/health',
+  path: '/health',
   getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
-  '/api/feedback': typeof ApiFeedbackRoute
-  '/api/health': typeof ApiHealthRoute
-  '/api/account/me': typeof ApiAccountMeRoute
-  '/api/updates/preview': typeof ApiUpdatesPreviewRoute
+  '/health': typeof HealthRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
-  '/api/feedback': typeof ApiFeedbackRoute
-  '/api/health': typeof ApiHealthRoute
-  '/api/account/me': typeof ApiAccountMeRoute
-  '/api/updates/preview': typeof ApiUpdatesPreviewRoute
+  '/health': typeof HealthRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
-  '/api/feedback': typeof ApiFeedbackRoute
-  '/api/health': typeof ApiHealthRoute
-  '/api/account/me': typeof ApiAccountMeRoute
-  '/api/updates/preview': typeof ApiUpdatesPreviewRoute
+  '/health': typeof HealthRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths:
-    | '/'
-    | '/account'
-    | '/api/feedback'
-    | '/api/health'
-    | '/api/account/me'
-    | '/api/updates/preview'
+  fullPaths: '/' | '/account' | '/health'
   fileRoutesByTo: FileRoutesByTo
-  to:
-    | '/'
-    | '/account'
-    | '/api/feedback'
-    | '/api/health'
-    | '/api/account/me'
-    | '/api/updates/preview'
-  id:
-    | '__root__'
-    | '/'
-    | '/account'
-    | '/api/feedback'
-    | '/api/health'
-    | '/api/account/me'
-    | '/api/updates/preview'
+  to: '/' | '/account' | '/health'
+  id: '__root__' | '/' | '/account' | '/health'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AccountRoute: typeof AccountRoute
-  ApiFeedbackRoute: typeof ApiFeedbackRoute
-  ApiHealthRoute: typeof ApiHealthRoute
-  ApiAccountMeRoute: typeof ApiAccountMeRoute
-  ApiUpdatesPreviewRoute: typeof ApiUpdatesPreviewRoute
+  HealthRoute: typeof HealthRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -124,32 +75,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AccountRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/feedback': {
-      id: '/api/feedback'
-      path: '/api/feedback'
-      fullPath: '/api/feedback'
-      preLoaderRoute: typeof ApiFeedbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/health': {
-      id: '/api/health'
-      path: '/api/health'
-      fullPath: '/api/health'
-      preLoaderRoute: typeof ApiHealthRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/account/me': {
-      id: '/api/account/me'
-      path: '/api/account/me'
-      fullPath: '/api/account/me'
-      preLoaderRoute: typeof ApiAccountMeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/updates/preview': {
-      id: '/api/updates/preview'
-      path: '/api/updates/preview'
-      fullPath: '/api/updates/preview'
-      preLoaderRoute: typeof ApiUpdatesPreviewRouteImport
+    '/health': {
+      id: '/health'
+      path: '/health'
+      fullPath: '/health'
+      preLoaderRoute: typeof HealthRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -158,10 +88,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AccountRoute: AccountRoute,
-  ApiFeedbackRoute: ApiFeedbackRoute,
-  ApiHealthRoute: ApiHealthRoute,
-  ApiAccountMeRoute: ApiAccountMeRoute,
-  ApiUpdatesPreviewRoute: ApiUpdatesPreviewRoute,
+  HealthRoute: HealthRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

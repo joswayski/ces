@@ -2120,6 +2120,37 @@ describe("Thumbnail", () => {
       .closest(".thumbnail-stack-toolbar")).not.toHaveClass("thumbnail-stack-toolbar-anchor-top");
   });
 
+  it("mirrors preview close controls and Clear all to the right edge", async () => {
+    vi.mocked(invoke).mockImplementation(async (command) => {
+      if (command === "get_artifacts") return [
+        { ...artifact, path: "/Users/example/Captures/capture-1.png" },
+        { ...secondArtifact, path: "/Users/example/Captures/capture-2.png" },
+      ];
+      if (command === "get_clipboard_state") {
+        return { revision: 0, artifact_id: artifact.id };
+      }
+      if (command === "get_settings") {
+        return { mini_preview_placement: "bottom_right" };
+      }
+      if (command === "get_thumbnail_pointer_position") {
+        return new Promise(() => undefined);
+      }
+      return undefined;
+    });
+
+    render(<Thumbnail />);
+    const [card] = await screen.findAllByRole("article");
+    const stack = card.closest(".thumbnail-stack")!;
+    await waitFor(() => expect(stack).toHaveClass("thumbnail-stack-anchor-right"));
+
+    const toolbar = screen.getByRole("button", { name: "Minimize previews" })
+      .closest(".thumbnail-stack-toolbar")!;
+    expect(toolbar).toHaveClass("thumbnail-stack-toolbar-anchor-right");
+    expect(screen.getByRole("button", { name: "Clear all previews" })).toBeInTheDocument();
+    expect(card.querySelector(".thumbnail-top-actions")).toBeTruthy();
+    expect(card.querySelector(".thumbnail-editor-control")).toBeTruthy();
+  });
+
   it("keeps Show less on the top-right from a top-right preference", async () => {
     vi.mocked(invoke).mockImplementation(async (command) => {
       if (command === "get_artifacts") return [artifact, secondArtifact];

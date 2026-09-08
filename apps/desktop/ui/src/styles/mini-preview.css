@@ -39,10 +39,12 @@ body:has(.thumbnail-stack),
     0 2px 5px rgba(0, 0, 0, 0.26);
   /*
    * Signed gravity from JS brings the collapsed layers together around the
-   * vertical midpoint. The discrete expand sign still chooses which way the
+   * vertical midpoint. Center proximity inversely adds a restrained paper
+   * rotation there. The discrete expand sign still chooses which way the
    * full-size list opens after the anchor changes.
    */
   --thumbnail-stack-gravity: 1;
+  --thumbnail-stack-center-proximity: 0;
   --thumbnail-stack-expand-sign: 1;
 
   position: absolute;
@@ -152,7 +154,17 @@ body:has(.thumbnail-stack),
   border-radius: 12px;
   box-shadow:
     var(--thumbnail-card-shadow),
-    0 0 0 1px rgba(255, 255, 255, 0.08);
+    0 0 0 1px rgba(
+      255,
+      255,
+      255,
+      calc(
+        0.08
+        + min(1, var(--thumbnail-stack-pile-depth, 0))
+          * var(--thumbnail-stack-center-proximity, 0)
+          * 0.22
+      )
+    );
   cursor: -webkit-grab;
   cursor: grab;
   transition:
@@ -538,6 +550,11 @@ html:not(.thumbnail-native-tracking) .thumbnail-card:hover .thumbnail-main-actio
   transform: translateY(-3px);
 }
 
+.thumbnail-stack-anchor-right .thumbnail-top-actions {
+  right: 8px;
+  left: auto;
+}
+
 html:not(.thumbnail-native-tracking) .thumbnail-card:hover .thumbnail-top-actions,
 .thumbnail-card:focus-within .thumbnail-top-actions,
 .thumbnail-card[data-thumbnail-native-active="true"] .thumbnail-top-actions {
@@ -788,6 +805,11 @@ html:not(.thumbnail-native-tracking) .thumbnail-card:hover .thumbnail-editor-con
   font-size: var(--text-2xs);
   font-weight: var(--weight-medium);
   white-space: nowrap;
+}
+
+.thumbnail-stack-anchor-right .thumbnail-editor-control {
+  right: auto;
+  left: 8px;
 }
 
 .thumbnail-editor-control:hover .thumbnail-editor-control-tip,
@@ -1233,12 +1255,17 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
  * reflow. Duration = dismiss motion (450ms) + stack settle (580ms).
  */
 .thumbnail-exit-dismiss {
+  --thumbnail-dismiss-x: -118px;
   overflow: visible;
   animation: thumbnail-dismiss 1.03s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   pointer-events: none;
 }
 
-/* Horizontal-only SVG blur streaks the preview left as it exits. */
+.thumbnail-stack-anchor-right .thumbnail-exit-dismiss {
+  --thumbnail-dismiss-x: 118px;
+}
+
+/* Horizontal-only SVG blur streaks the preview toward the screen edge as it exits. */
 .thumbnail-card.thumbnail-exit-dismiss img {
   animation: thumbnail-dismiss-streak 0.45s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   transform-origin: center center;
@@ -1576,7 +1603,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
     height: 160px;
     margin-bottom: 0;
     opacity: 0;
-    transform: translateX(-118px);
+    transform: translateX(var(--thumbnail-dismiss-x));
   }
 }
 
@@ -1705,8 +1732,8 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
  * would freeze beside the 2nd/3rd card once the pile overflows. `fixed` keeps
  * it on the visible stack edge while the list scrolls. Left/right follows the
  * screen edge the pile is hugging; `--thumbnail-minimize-slide` flips the
- * Show less morph so the pill grows inward from that edge. Clear all sits to
- * the left of Show less so the Show less hover morph cannot cover it. The
+ * Show less morph so the pill grows inward from that edge. Clear all stays at
+ * the outside edge so the Show less hover morph cannot cover it. The
  * collapsed pile stays one hit target.
  */
 .thumbnail-stack-toolbar {
@@ -2121,6 +2148,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
   --thumbnail-minimize-slide: -1;
   left: auto;
   right: 28px;
+  flex-direction: row-reverse;
 }
 
 .thumbnail-stack-compact > .thumbnail-card {
@@ -2166,14 +2194,26 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
       ),
       calc(var(--thumbnail-stack-pile-depth, 0) * -24px)
     )
-    rotateZ(0deg)
+    rotateZ(
+      calc(
+        var(--thumbnail-stack-layer-rotation, 0)
+        * var(--thumbnail-stack-center-proximity, 0)
+        * 1deg
+      )
+    )
     rotateX(
       calc(
         var(--thumbnail-stack-pile-depth, 0) * -0.8deg
           * var(--thumbnail-stack-expand-sign, 1)
       )
     )
-    scale(calc(1 - var(--thumbnail-stack-pile-depth, 0) * 0.025));
+    scale(calc(
+      1
+      - var(--thumbnail-stack-pile-depth, 0) * 0.025
+      + var(--thumbnail-stack-pile-depth, 0)
+        * var(--thumbnail-stack-center-proximity, 0)
+        * 0.025
+    ));
   --thumbnail-stack-hover-transform:
     translate3d(
       calc(var(--thumbnail-stack-pile-depth, 0) * -0.6px),
@@ -2185,14 +2225,26 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
       ),
       calc(var(--thumbnail-stack-pile-depth, 0) * -18px)
     )
-    rotateZ(0deg)
+    rotateZ(
+      calc(
+        var(--thumbnail-stack-layer-rotation, 0)
+        * var(--thumbnail-stack-center-proximity, 0)
+        * 1deg
+      )
+    )
     rotateX(
       calc(
         var(--thumbnail-stack-pile-depth, 0) * -0.7deg
           * var(--thumbnail-stack-expand-sign, 1)
       )
     )
-    scale(calc(1 - var(--thumbnail-stack-pile-depth, 0) * 0.02));
+    scale(calc(
+      1
+      - var(--thumbnail-stack-pile-depth, 0) * 0.02
+      + var(--thumbnail-stack-pile-depth, 0)
+        * var(--thumbnail-stack-center-proximity, 0)
+        * 0.02
+    ));
   --thumbnail-stack-expanded-transform:
     translate3d(
       0,
@@ -2605,9 +2657,12 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
     )
     rotateZ(
       calc(
-        var(--thumbnail-drag-sway-x, 0)
-        * var(--thumbnail-stack-pile-depth, 0)
-        * 0.12deg
+        var(--thumbnail-stack-layer-rotation, 0)
+          * var(--thumbnail-stack-center-proximity, 0)
+          * 1deg
+        + var(--thumbnail-drag-sway-x, 0)
+          * var(--thumbnail-stack-pile-depth, 0)
+          * 0.12deg
       )
     )
     rotateX(
@@ -2616,7 +2671,13 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
           * var(--thumbnail-stack-expand-sign, 1)
       )
     )
-    scale(calc(1 - var(--thumbnail-stack-pile-depth, 0) * 0.02));
+    scale(calc(
+      1
+      - var(--thumbnail-stack-pile-depth, 0) * 0.02
+      + var(--thumbnail-stack-pile-depth, 0)
+        * var(--thumbnail-stack-center-proximity, 0)
+        * 0.02
+    ));
   box-shadow:
     var(--thumbnail-card-shadow),
     0 0 0 1px rgba(var(--theme-accent-rgb), 0.55),

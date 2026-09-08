@@ -45,6 +45,10 @@ export const THUMBNAIL_STACK_PEEK_JITTER_PX = 0.4;
 /** How quickly peek jitter settles toward the back of the pile. */
 export const THUMBNAIL_STACK_PEEK_JITTER_DECAY = 0.58;
 
+/** Restrained paper-stack rotation range for cards behind the front preview. */
+export const THUMBNAIL_STACK_LAYER_ROTATION_MIN_DEG = 2.7;
+export const THUMBNAIL_STACK_LAYER_ROTATION_MAX_DEG = 3;
+
 /** Idle collapsed peek per pose unit (matches compact rest `translateY`). */
 export const THUMBNAIL_STACK_IDLE_PEEK_PX = 13;
 
@@ -116,6 +120,25 @@ export function thumbnailStackPeekJitterPx(depth: number): number {
 function thumbnailStackPeekJitterUnit(depth: number): number {
   const hashed = Math.imul(depth * 0x9e3779b1 ^ 0x7f4a7c15, 0x85ebca6b) >>> 0;
   return hashed / 2 ** 32 * 2 - 1;
+}
+
+/**
+ * Stable per-capture rotation for a loose-paper cue near screen center.
+ * The front card stays square; CSS fades rear-card rotation out toward the
+ * top and bottom edges using the inverse of stack gravity.
+ */
+export function thumbnailStackLayerRotationDeg(id: string, depth: number): number {
+  if (depth <= 0) return 0;
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < id.length; index += 1) {
+    hash ^= id.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  const sign = hash & 1 ? 1 : -1;
+  const magnitude = THUMBNAIL_STACK_LAYER_ROTATION_MIN_DEG
+    + (hash >>> 1) / 2 ** 31
+      * (THUMBNAIL_STACK_LAYER_ROTATION_MAX_DEG - THUMBNAIL_STACK_LAYER_ROTATION_MIN_DEG);
+  return Number((sign * magnitude).toFixed(3));
 }
 
 /** Compact rest/hover depth. Same as pose: extras recede instead of clamping. */
@@ -234,6 +257,7 @@ export function harnessOffsetForPlacement(
 }
 
 export const THUMBNAIL_STACK_GRAVITY_VAR = "--thumbnail-stack-gravity";
+export const THUMBNAIL_STACK_CENTER_PROXIMITY_VAR = "--thumbnail-stack-center-proximity";
 
 /** Switch to a top pile once gravity is clearly in the upper band. */
 export const THUMBNAIL_STACK_ANCHOR_TOP_GRAVITY = -0.2;
@@ -378,9 +402,14 @@ export function applyThumbnailStackGravity(
   gravity: number,
 ) {
   if (!stack) return;
+  const clamped = clampGravity(gravity);
   stack.style.setProperty(
     THUMBNAIL_STACK_GRAVITY_VAR,
-    String(Number(clampGravity(gravity).toFixed(4))),
+    String(Number(clamped.toFixed(4))),
+  );
+  stack.style.setProperty(
+    THUMBNAIL_STACK_CENTER_PROXIMITY_VAR,
+    String(Number((1 - Math.abs(clamped)).toFixed(4))),
   );
 }
 

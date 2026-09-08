@@ -168,24 +168,17 @@ Windows builds produce an NSIS installer, MSI package, and unpackaged executable
 
 ## Feedback API
 
-Early user feedback is posted to Discord with no database. Same-origin `/api/*`
-routes are TanStack Start server routes under `apps/web/src/routes/api`.
+Early user feedback is posted to Discord with no database. Public feedback and
+Preview updater requests are handled by the Rust `captures-api` service.
 
-To run the website and its API locally, create `apps/web/.env` with:
+Set the API process environment before starting it:
 
 ```dotenv
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 ```
 
-Then run:
-
-```sh
-npm run dev:web
-```
-
-The local health endpoint is `http://localhost:5174/api/health`. The Preview
-updater manifest cache is `GET http://localhost:5174/api/updates/preview`. See
-[`apps/web/README.md`](apps/web/README.md) for AWS and Cloudflare setup.
+The variable is optional at startup, but feedback returns 503 when it is absent.
+Invalid or non-Discord webhook URLs are rejected without logging their contents.
 
 Point a local desktop build at that server:
 
