@@ -550,6 +550,11 @@ html:not(.thumbnail-native-tracking) .thumbnail-card:hover .thumbnail-main-actio
   transform: translateY(-3px);
 }
 
+.thumbnail-stack-anchor-right .thumbnail-top-actions {
+  right: 8px;
+  left: auto;
+}
+
 html:not(.thumbnail-native-tracking) .thumbnail-card:hover .thumbnail-top-actions,
 .thumbnail-card:focus-within .thumbnail-top-actions,
 .thumbnail-card[data-thumbnail-native-active="true"] .thumbnail-top-actions {
@@ -800,6 +805,11 @@ html:not(.thumbnail-native-tracking) .thumbnail-card:hover .thumbnail-editor-con
   font-size: var(--text-2xs);
   font-weight: var(--weight-medium);
   white-space: nowrap;
+}
+
+.thumbnail-stack-anchor-right .thumbnail-editor-control {
+  right: auto;
+  left: 8px;
 }
 
 .thumbnail-editor-control:hover .thumbnail-editor-control-tip,
@@ -1245,12 +1255,17 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
  * reflow. Duration = dismiss motion (450ms) + stack settle (580ms).
  */
 .thumbnail-exit-dismiss {
+  --thumbnail-dismiss-x: -118px;
   overflow: visible;
   animation: thumbnail-dismiss 1.03s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   pointer-events: none;
 }
 
-/* Horizontal-only SVG blur streaks the preview left as it exits. */
+.thumbnail-stack-anchor-right .thumbnail-exit-dismiss {
+  --thumbnail-dismiss-x: 118px;
+}
+
+/* Horizontal-only SVG blur streaks the preview toward the screen edge as it exits. */
 .thumbnail-card.thumbnail-exit-dismiss img {
   animation: thumbnail-dismiss-streak 0.45s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   transform-origin: center center;
@@ -1588,7 +1603,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
     height: 160px;
     margin-bottom: 0;
     opacity: 0;
-    transform: translateX(-118px);
+    transform: translateX(var(--thumbnail-dismiss-x));
   }
 }
 
@@ -1717,8 +1732,8 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
  * would freeze beside the 2nd/3rd card once the pile overflows. `fixed` keeps
  * it on the visible stack edge while the list scrolls. Left/right follows the
  * screen edge the pile is hugging; `--thumbnail-minimize-slide` flips the
- * Show less morph so the pill grows inward from that edge. Clear all sits to
- * the left of Show less so the Show less hover morph cannot cover it. The
+ * Show less morph so the pill grows inward from that edge. Clear all stays at
+ * the outside edge so the Show less hover morph cannot cover it. The
  * collapsed pile stays one hit target.
  */
 .thumbnail-stack-toolbar {
@@ -2133,6 +2148,7 @@ html:has(.thumbnail-card.thumbnail-file-dragging) * {
   --thumbnail-minimize-slide: -1;
   left: auto;
   right: 28px;
+  flex-direction: row-reverse;
 }
 
 .thumbnail-stack-compact > .thumbnail-card {

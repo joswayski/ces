@@ -7513,6 +7513,7 @@ export function Thumbnail() {
           stackHoverReady ? "thumbnail-stack-hover-ready" : "",
           stackHoverLatched ? "thumbnail-stack-hover-latched" : "",
           stackAnchor === "top" ? "thumbnail-stack-anchor-top" : "",
+          stackSide === "right" ? "thumbnail-stack-anchor-right" : "",
           stackClearing ? "thumbnail-stack-clearing" : "",
         ].filter(Boolean).join(" ")}
         onScroll={refreshStackOverflow}
