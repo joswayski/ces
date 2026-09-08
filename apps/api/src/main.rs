@@ -82,7 +82,10 @@ async fn main() {
 fn router() -> Router {
     Router::new()
         .route("/health", get(|| async { Json(json!({"status":"ok"})) }))
-        .route("/api/health", get(|| async { Json(json!({"status":"ok"})) }))
+        .route(
+            "/api/health",
+            get(|| async { Json(json!({"status":"ok"})) }),
+        )
         .route("/api/account/me", get(account_unavailable))
 }
 

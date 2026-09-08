@@ -41,7 +41,7 @@ jobs:
           trap 'docker rm --force "$container_id" >/dev/null' EXIT
 
           for _ in {1..30}; do
-            if response="$(curl --fail --silent --show-error http://127.0.0.1:3000/api/health)"; then
+            if response="$(curl --fail --silent --show-error http://127.0.0.1:3000/health)"; then
               test "$response" = '{"status":"ok"}'
               exit 0
             fi
