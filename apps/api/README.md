@@ -42,11 +42,15 @@ schema, matching Caper. The databases remain separate: Captures connects to
 `captures`, Caper to `caperchat`. A schema is a namespace inside a database;
 `public` does not mean publicly accessible.
 
-Both connections use PostgreSQL's default search path, with no custom startup
-options or session `SET search_path` required. With the database selected, use
-`SELECT * FROM users` and `SELECT * FROM _sqlx_migrations`. If a role has a custom
-search path from manual setup, restore its default before using the API. Migration
-and runtime roles need `public` as their default writable/lookup schema, as in Caper.
+The direct migration connection explicitly pins `search_path=public`, so role or
+database settings and username schemas cannot redirect table or ledger creation.
+Runtime pooler connections receive no startup override. For runtime and manual
+queries, keep `public` on the search path without another `users` table ahead of
+it. PostgreSQL's usual `"$user", public` default works unless the username schema
+shadows that table. With normal lookup, use `SELECT * FROM users` and
+`SELECT * FROM _sqlx_migrations`; no prefix or per-session `SET` is required.
+If lookup was customized, check `SHOW search_path` and correct the role/database
+defaults. Pinning migrations does not change those defaults or move existing tables.
 
 Users retain an internal bigint ID, nullable email, verification state (false by
 default), creation/update timestamps, and disabled/deleted timestamps. Deleted
@@ -113,7 +117,8 @@ The initial migration now targets `public` for the approved empty installation.
 This is not an automatic data move or upgrade of the old migration ledger. If the
 old account tables have already been deleted, **no further table deletion is
 needed**. An empty `captures` schema can remain; the API no longer uses or creates it.
-Caper already uses `public` and needs no change for this PR.
+Caper's separate database already targets `public`; it needs no schema reset for
+this Captures transition.
 
 Before the new API image starts, stop any old Captures API instance that could
 recreate the custom-schema tables. From the infrastructure checkout with the

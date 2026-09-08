@@ -107,9 +107,9 @@ async fn connect(url: &str) -> Result<PgPool, sqlx::Error> {
 }
 
 async fn connect_for_migration(url: &str) -> Result<PgPool, sqlx::Error> {
-    // Like Caper, migrations and runtime queries use the default public schema.
-    // SQLx serializes concurrent migrations; there is no custom schema to bootstrap.
-    let options = PgConnectOptions::from_str(url)?;
+    // Pin the direct connection: defaults can prefer a username or custom schema.
+    // Runtime pooler connections must not receive this startup option.
+    let options = PgConnectOptions::from_str(url)?.options([("search_path", "public")]);
     PgPoolOptions::new()
         .max_connections(1)
         .acquire_timeout(Duration::from_secs(5))

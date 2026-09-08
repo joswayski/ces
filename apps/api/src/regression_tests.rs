@@ -102,9 +102,51 @@ async fn postgres_users_and_startup_regressions() {
         .unwrap();
     let test_url = options.database(&name).to_url_lossy().to_string();
     let result = async {
+        let setup = crate::connect(&test_url).await?;
+        let user_schema: String = sqlx::query_scalar("SELECT quote_ident(current_user)")
+            .fetch_one(&setup)
+            .await?;
+        sqlx::query(&format!("CREATE SCHEMA {user_schema}"))
+            .execute(&setup)
+            .await?;
+        sqlx::query("CREATE SCHEMA alternate")
+            .execute(&setup)
+            .await?;
+        // The default "$user", public path now prefers the username schema.
+        crate::migrate(&test_url)
+            .await
+            .expect("username schema migration");
+        sqlx::query(&format!(
+            "ALTER DATABASE {name} SET search_path = alternate, public"
+        ))
+        .execute(&setup)
+        .await?;
+        // New direct connections must override a database-level path as well.
         let (first, second) = tokio::join!(crate::migrate(&test_url), crate::migrate(&test_url));
         first.expect("first concurrent startup migration");
         second.expect("second concurrent startup migration");
+        let migration_pool = crate::connect_for_migration(&test_url).await?;
+        let migration_path: String = sqlx::query_scalar("SHOW search_path")
+            .fetch_one(&migration_pool)
+            .await?;
+        assert_eq!(migration_path, "public");
+        migration_pool.close().await;
+        let misplaced_tables: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.tables
+             WHERE table_name IN ('users', '_sqlx_migrations') AND table_schema <> 'public'",
+        )
+        .fetch_one(&setup)
+        .await?;
+        assert_eq!(misplaced_tables, 0);
+        // Restore ordinary lookup for the runtime/manual-query checks below.
+        // No CASCADE: these schemas must be empty after every migration attempt.
+        sqlx::query(&format!("DROP SCHEMA {user_schema}, alternate"))
+            .execute(&setup)
+            .await?;
+        sqlx::query(&format!("ALTER DATABASE {name} RESET search_path"))
+            .execute(&setup)
+            .await?;
+        setup.close().await;
         let pool = crate::connect(&test_url).await?;
         let search_path: String = sqlx::query_scalar("SHOW search_path")
             .fetch_one(&pool)
