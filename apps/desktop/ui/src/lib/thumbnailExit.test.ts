@@ -9,11 +9,19 @@ import {
   THUMBNAIL_DELETE_ORIGIN_Y,
   THUMBNAIL_DISSOLVE_WAVE_MS,
   THUMBNAIL_DUST_LAYER_PAD_PX,
+  thumbnailDeleteOriginX,
 } from "./thumbnailExit";
 
 const pad = THUMBNAIL_DUST_LAYER_PAD_PX;
 
 describe("thumbnail exit effects", () => {
+  it("mirrors delete dust origins with right-side controls", () => {
+    expect(thumbnailDeleteOriginX(284, false, "left")).toBe(22.5);
+    expect(thumbnailDeleteOriginX(284, true, "left")).toBe(57.5);
+    expect(thumbnailDeleteOriginX(284, false, "right")).toBe(261.5);
+    expect(thumbnailDeleteOriginX(284, true, "right")).toBe(226.5);
+  });
+
   it("builds a grid of dust chips covering the card surface", () => {
     const particles = buildThumbnailDustParticles(140, 90, {
       cols: 4,

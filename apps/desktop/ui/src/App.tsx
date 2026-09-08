@@ -122,8 +122,7 @@ import {
   prefersReducedMotion,
   THUMBNAIL_CARD_FALLBACK_HEIGHT,
   THUMBNAIL_CARD_FALLBACK_WIDTH,
-  THUMBNAIL_DELETE_ORIGIN_AFTER_CLOSE_X,
-  THUMBNAIL_DELETE_ORIGIN_FIRST_X,
+  thumbnailDeleteOriginX,
   THUMBNAIL_DELETE_ORIGIN_Y,
   type ThumbnailDustParticle,
 } from "./lib/thumbnailExit";
@@ -7558,6 +7557,7 @@ export function Thumbnail() {
             viewerActive={activeViewerArtifactId === artifact.id}
             editorActive={editorActiveArtifactIds.has(artifact.id)}
             stackCollapsed={compact}
+            stackSide={stackSide}
             stackDepth={artifacts.length - artifacts.indexOf(artifact) - 1}
             expandFromPose={expandFromPoses.get(artifact.id)}
             stackDismissing={isStackClearTarget}
@@ -7697,6 +7697,7 @@ export function ThumbnailCard({
   viewerActive,
   editorActive = false,
   stackCollapsed = false,
+  stackSide = "left",
   stackDepth = 0,
   expandFromPose,
   stackDismissing = false,
@@ -7711,6 +7712,7 @@ export function ThumbnailCard({
   /** True when this capture is still present as a layer in an open editor. */
   editorActive?: boolean;
   stackCollapsed?: boolean;
+  stackSide?: ThumbnailStackSide;
   stackDepth?: number;
   expandFromPose?: ThumbnailCardPose;
   /** Parent Clear all: play Close without a per-card dismiss command. */
@@ -8082,13 +8084,13 @@ export function ThumbnailCard({
       const card = cardRef.current;
       const width = card?.clientWidth || THUMBNAIL_CARD_FALLBACK_WIDTH;
       const height = card?.clientHeight || THUMBNAIL_CARD_FALLBACK_HEIGHT;
-      // Before a folder save the delete control is the first top-left button;
-      // after save it sits next to Close — wave origin must match the real icon.
+      // Before a folder save the delete control is the first control; after
+      // save it sits next to Close. Mirror the wave origin with the controls.
       const hasFolderFile = Boolean(artifact.path);
       setDustParticles(buildThumbnailDustParticles(width, height, {
         imageWidth: artifact.width,
         imageHeight: artifact.height,
-        originX: hasFolderFile ? THUMBNAIL_DELETE_ORIGIN_AFTER_CLOSE_X : THUMBNAIL_DELETE_ORIGIN_FIRST_X,
+        originX: thumbnailDeleteOriginX(width, hasFolderFile, stackSide),
         originY: THUMBNAIL_DELETE_ORIGIN_Y,
       }));
     } else {
