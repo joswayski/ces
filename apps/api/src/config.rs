@@ -4,6 +4,7 @@ use std::{env, net::SocketAddr};
 pub struct Config {
     pub database_url: String,
     pub bind: SocketAddr,
+    pub discord_webhook_url: Option<String>,
 }
 
 impl Config {
@@ -15,8 +16,27 @@ impl Config {
         Ok(Self {
             database_url: database_url("DATABASE_URL", false)?,
             bind,
+            discord_webhook_url: discord_webhook_url()?,
         })
     }
+}
+
+fn discord_webhook_url() -> Result<Option<String>, String> {
+    let Some(value) = env::var("DISCORD_WEBHOOK_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return Ok(None);
+    };
+    let url = reqwest::Url::parse(&value)
+        .map_err(|_| "DISCORD_WEBHOOK_URL must be a valid Discord HTTPS webhook URL".to_string())?;
+    if url.scheme() != "https"
+        || !matches!(url.host_str(), Some("discord.com" | "discordapp.com"))
+        || !url.path().starts_with("/api/webhooks/")
+    {
+        return Err("DISCORD_WEBHOOK_URL must be a valid Discord HTTPS webhook URL".into());
+    }
+    Ok(Some(value))
 }
 
 fn required(name: &str) -> Result<String, String> {
