@@ -460,7 +460,16 @@ describe("thumbnail stack layout", () => {
       /\.thumbnail-exit-dismiss\s*\{[^}]*animation:\s*thumbnail-dismiss/,
     );
     expect(thumbnailStyles).toMatch(
-      /@keyframes thumbnail-dismiss\s*\{[\s\S]*?transform:\s*translateX\(-118px\)/,
+      /@keyframes thumbnail-dismiss\s*\{[\s\S]*?transform:\s*translateX\(var\(--thumbnail-dismiss-x\)\)/,
+    );
+    expect(thumbnailStyles).toMatch(
+      /\.thumbnail-stack-anchor-right \.thumbnail-exit-dismiss\s*\{\s*--thumbnail-dismiss-x:\s*118px;/,
+    );
+    expect(thumbnailStyles).toMatch(
+      /\.thumbnail-stack-toolbar-anchor-right\s*\{[\s\S]*?flex-direction:\s*row-reverse;/,
+    );
+    expect(thumbnailStyles).toMatch(
+      /\.thumbnail-stack-anchor-right \.thumbnail-top-actions\s*\{\s*right:\s*8px;[\s\S]*?left:\s*auto;/,
     );
   });
 

@@ -30,6 +30,18 @@ export const THUMBNAIL_DELETE_ORIGIN_AFTER_CLOSE_X = 57.5; // 8 + 29 + 6 + 14.5
 export const THUMBNAIL_DELETE_ORIGIN_X = THUMBNAIL_DELETE_ORIGIN_AFTER_CLOSE_X;
 export const THUMBNAIL_DELETE_ORIGIN_Y = 22.5;
 
+/** Center the delete dissolve on the mirrored control when the stack is right-anchored. */
+export function thumbnailDeleteOriginX(
+  cardWidth: number,
+  hasFolderFile: boolean,
+  side: "left" | "right",
+): number {
+  const leftOrigin = hasFolderFile
+    ? THUMBNAIL_DELETE_ORIGIN_AFTER_CLOSE_X
+    : THUMBNAIL_DELETE_ORIGIN_FIRST_X;
+  return side === "right" ? cardWidth - leftOrigin : leftOrigin;
+}
+
 /**
  * Target chip size in CSS pixels.
  * ~10–12px keeps the dissolve fine without flooding the compositor
