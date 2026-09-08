@@ -1,4 +1,5 @@
 mod config;
+mod public_api;
 
 #[cfg(test)]
 mod regression_tests;
@@ -9,7 +10,7 @@ use axum::{
     Json, Router,
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use config::Config;
 use serde_json::json;
@@ -72,14 +73,14 @@ async fn main() {
             std::process::exit(2)
         });
     tracing::info!(%bind, "captures API listening");
-    axum::serve(listener, router())
+    axum::serve(listener, router(config.discord_webhook_url))
         .with_graceful_shutdown(shutdown())
         .await
         .unwrap_or_else(|_| eprintln!("server stopped unexpectedly"));
     pool.close().await;
 }
 
-fn router() -> Router {
+fn router(discord_webhook_url: Option<String>) -> Router {
     Router::new()
         .route("/health", get(|| async { Json(json!({"status":"ok"})) }))
         .route(
@@ -87,6 +88,12 @@ fn router() -> Router {
             get(|| async { Json(json!({"status":"ok"})) }),
         )
         .route("/api/account/me", get(account_unavailable))
+        .route("/api/updates/preview", get(public_api::preview))
+        .route(
+            "/api/feedback",
+            post(public_api::feedback).options(public_api::feedback_options),
+        )
+        .with_state(public_api::ApiState::new(discord_webhook_url))
 }
 
 async fn connect(url: &str) -> Result<PgPool, sqlx::Error> {

@@ -15,7 +15,7 @@ async fn account_requests_fail_closed_even_with_credentials() {
         if let Some(token) = token {
             request = request.header(header::AUTHORIZATION, token);
         }
-        let response = crate::router()
+        let response = crate::router(None)
             .oneshot(request.body(Body::empty()).unwrap())
             .await
             .unwrap();
@@ -28,12 +28,56 @@ async fn account_requests_fail_closed_even_with_credentials() {
 #[tokio::test]
 async fn health_remains_available() {
     for path in ["/health", "/api/health"] {
-        let response = crate::router()
+        let response = crate::router(None)
             .oneshot(Request::get(path).body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK, "{path}");
     }
+}
+
+#[tokio::test]
+async fn feedback_contract_validates_before_configuration() {
+    let response = crate::router(None)
+        .oneshot(
+            Request::post("/api/feedback")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"message":"   "}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    let response = crate::router(None)
+        .oneshot(
+            Request::post("/api/feedback")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(r#"{"message":"Recording freezes"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+}
+
+#[tokio::test]
+async fn feedback_cors_contract_is_preserved() {
+    let response = crate::router(None)
+        .oneshot(
+            Request::options("/api/feedback")
+                .header(header::ORIGIN, "https://captur.es")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        response.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
+        "https://captur.es"
+    );
 }
 
 #[tokio::test]
